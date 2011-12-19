@@ -31,18 +31,7 @@ public:
   bool IsTerrible() {
     return (weight > 0.5 & reliability/weight < 0.2 && timing/weight < 86400 && count/weight > 2.0);
   }
-  void Update(bool good) {
-    uint32_t now = time(NULL);
-    double f =  exp(-(now-ourLastTry)/TAU);
-    reliability = reliability * f + (good ? (1.0-f) : 0);
-    timing = (timing + (now-ourLastTry) * weight) * f;
-    count = count * f + 1;
-    weight = weight * f + (1.0-f);
-    lastTry = now;
-    ourLastTry = now;
-    total++;
-    if (good) success++;
-  }
+  void Update(bool good);
   
   friend class CAddrDb;
 };
