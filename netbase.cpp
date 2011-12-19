@@ -183,12 +183,8 @@ bool CIPPort::ConnectSocket(SOCKET& hSocketRet, int nTimeout) const
     setsockopt(hSocket, SOL_SOCKET, SO_NOSIGPIPE, (void*)&set, sizeof(int));
 #endif
 
-    bool fProxy = (fUseProxy && IsRoutable());
     struct sockaddr_in sockaddr;
-    if (fProxy)
-        addrProxy.GetSockAddr(&sockaddr);
-    else
-        GetSockAddr(&sockaddr);
+    GetSockAddr(&sockaddr);
 
 #ifdef WIN32
     u_long fNonblock = 1;
@@ -271,39 +267,6 @@ bool CIPPort::ConnectSocket(SOCKET& hSocketRet, int nTimeout) const
     {
         closesocket(hSocket);
         return false;
-    }
-
-    if (fProxy)
-    {
-        printf("proxy connecting %s\n", ToString().c_str());
-        char pszSocks4IP[] = "\4\1\0\0\0\0\0\0user";
-        struct sockaddr_in addr;
-        GetSockAddr(&addr);
-        memcpy(pszSocks4IP + 2, &addr.sin_port, 2);
-        memcpy(pszSocks4IP + 4, &addr.sin_addr, 4);
-        char* pszSocks4 = pszSocks4IP;
-        int nSize = sizeof(pszSocks4IP);
-
-        int ret = send(hSocket, pszSocks4, nSize, MSG_NOSIGNAL);
-        if (ret != nSize)
-        {
-            closesocket(hSocket);
-            return false;
-        }
-        char pchRet[8];
-        if (recv(hSocket, pchRet, 8, 0) != 8)
-        {
-            closesocket(hSocket);
-            return false;
-        }
-        if (pchRet[1] != 0x5a)
-        {
-            closesocket(hSocket);
-            if (pchRet[1] != 0x5b)
-                printf("ERROR: Proxy returned error %d\n", pchRet[1]);
-            return false;
-        }
-        printf("proxy connected %s\n", ToString().c_str());
     }
 
     hSocketRet = hSocket;
