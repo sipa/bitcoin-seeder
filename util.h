@@ -2,6 +2,7 @@
 #define _UTIL_H_ 1
 
 #include <pthread.h>
+#include <errno.h>
 
 #define loop                for (;;)
 #define BEGIN(a)            ((char*)&(a))
