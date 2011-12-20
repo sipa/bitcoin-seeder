@@ -17,12 +17,27 @@ void CAddrInfo::Update(bool good) {
     printf("%s: got %s result: weight=%g reliability=%g avgage=%g count=%g success=%i/%i\n", ip.ToString().c_str(), good ? "good" : "bad", weight, reliability/weight, timing/weight, count/weight, success, total);
 }
 
-bool CAddrDb::Get_(CIPPort &ip) {
+bool CAddrDb::Get_(CIPPort &ip, int &wait) {
   int cont = 0;
+  int64 now = time(NULL);
   do {
     cont = 0;
-    int tot = unkId.size() + ourId.size();
-    if (tot == 0) return false;
+    int tot = unkId.size();
+    deque<int>::iterator it = ourId.begin();
+    while (it < ourId.end()) {
+      if (now - idToInfo[*it].ourLastTry > MIN_RETRY) {
+        tot++;
+        it++;
+      } else {
+        break;
+      }
+    }
+    if (tot == 0) {
+      if (ourId.size() > 0) {
+        wait = MIN_RETRY - (now - idToInfo[ourId.front()].ourLastTry);
+      }
+      return false;
+    }
     int rnd = rand() % tot;
     if (rnd < unkId.size()) {
       set<int>::iterator it = unkId.begin();
@@ -31,12 +46,8 @@ bool CAddrDb::Get_(CIPPort &ip) {
       printf("From UNK: %s\n", ip.ToString().c_str());
     } else {
       int ret = ourId.front();
+      if (time(NULL) - idToInfo[ret].ourLastTry < MIN_RETRY) return false;
       ourId.pop_front();
-      if (unkId.size() > 0 && time(NULL) - idToInfo[ret].ourLastTry < MIN_RETRY) {
-        ourId.push_back(ret);
-        cont=1;
-        continue;
-      }
       ip = idToInfo[ret].ip;
       printf("From OUR: %s (size = %i)\n", ip.ToString().c_str(), (int)ourId.size());
     }
@@ -76,11 +87,11 @@ void CAddrDb::Bad_(const CIPPort &addr, int ban)
   uint32_t now = time(NULL);
   if (info.IsTerrible()) {
     printf("%s: terrible\n", addr.ToString().c_str());
-    if (ban < 604800+now) ban = 604800+now;
+    if (ban < 604800) ban = 604800;
   }
-  if (ban > now) {
-    printf("%s: banned %lu seconds\n", addr.ToString().c_str(), (unsigned long)(ban-now));
-    banned[info.ip] = ban;
+  if (ban > 0) {
+    printf("%s: ban %i seconds\n", addr.ToString().c_str(), ban);
+    banned[info.ip] = ban + now;
     ipToId.erase(info.ip);
     goodId.erase(id);
     idToInfo.erase(id);

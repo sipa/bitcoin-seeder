@@ -15,8 +15,9 @@ extern "C" void* ThreadCrawler(void* data) {
   do {
     db.Stats();
     CIPPort ip;
-    if (!db.Get(ip)) {
-      Sleep(5000);
+    int wait = 5;
+    if (!db.Get(ip, wait)) {
+      Sleep(wait*1000);
       continue;
     }
     int ban = 0;

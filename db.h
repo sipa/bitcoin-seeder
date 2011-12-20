@@ -61,7 +61,7 @@ protected:
   void Good_(const CIPPort &ip);
   void Bad_(const CIPPort &ip, int ban);
   void Skipped_(const CIPPort &ip);
-  bool Get_(CIPPort &ip);
+  bool Get_(CIPPort &ip, int& wait);
   int Lookup_(const CIPPort &ip);
   void GetIPs_(std::set<CIP>& ips, int max, bool fOnlyIPv4);
 
@@ -91,9 +91,9 @@ public:
     CRITICAL_BLOCK(cs)
       Bad_(addr, ban);
   }
-  bool Get(CIPPort &ip) {
+  bool Get(CIPPort &ip, int& wait) {
     CRITICAL_BLOCK(cs)
-      return Get_(ip);
+      return Get_(ip, wait);
   }
   void GetIPs(std::set<CIP>& ips, int max, bool fOnlyIPv4 = true) {
     CRITICAL_BLOCK(cs)
