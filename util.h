@@ -45,12 +45,18 @@ inline int myclosesocket(SOCKET& hSocket)
 class CCriticalSection
 {
 protected:
-    pthread_mutex_t mutex;
+    pthread_rwlock_t mutex;
 public:
-    explicit CCriticalSection() { pthread_mutex_init(&mutex, NULL); }
-    ~CCriticalSection() { pthread_mutex_destroy(&mutex); }
-    void Enter() { pthread_mutex_lock(&mutex); }
-    void Leave() { pthread_mutex_unlock(&mutex); }
+    explicit CCriticalSection() { pthread_rwlock_init(&mutex, NULL); }
+    ~CCriticalSection() { pthread_rwlock_destroy(&mutex); }
+    void Enter(bool fShared = false) { 
+      if (fShared) {
+        pthread_rwlock_rdlock(&mutex);
+      } else {
+        pthread_rwlock_wrlock(&mutex);
+      }
+    }
+    void Leave() { pthread_rwlock_unlock(&mutex); }
 };
 
 // Automatically leave critical section when leaving block, needed for exception safety
@@ -59,13 +65,16 @@ class CCriticalBlock
 protected:
     CCriticalSection* pcs;
 public:
-    CCriticalBlock(CCriticalSection& cs) : pcs(&cs) { pcs->Enter(); }
+    CCriticalBlock(CCriticalSection& cs, bool fShared = false) : pcs(&cs) { pcs->Enter(fShared); }
     operator bool() const { return true; }
     ~CCriticalBlock() { pcs->Leave(); }
 };
 
 #define CRITICAL_BLOCK(cs)     \
     if (CCriticalBlock criticalblock = CCriticalBlock(cs))
+
+#define SHARED_CRITICAL_BLOCK(cs)     \
+    if (CCriticalBlock criticalblock = CCriticalBlock(cs, true))
 
 template<typename T1> inline uint256 Hash(const T1 pbegin, const T1 pend)
 {

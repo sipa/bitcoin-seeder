@@ -85,7 +85,7 @@ public:
   IMPLEMENT_SERIALIZE (({
     int nVersion = 0;
     READWRITE(nVersion);
-    CRITICAL_BLOCK(cs) {
+    SHARED_CRITICAL_BLOCK(cs) {
       if (fWrite) {
         CAddrDb *db = const_cast<CAddrDb*>(this);
         int nOur = ourId.size();
@@ -158,7 +158,7 @@ public:
       return Get_(ip, wait);
   }
   void GetIPs(std::set<CIP>& ips, int max, bool fOnlyIPv4 = true) {
-    CRITICAL_BLOCK(cs)
+    SHARED_CRITICAL_BLOCK(cs)
       GetIPs_(ips, max, fOnlyIPv4);
   }
 };

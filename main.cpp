@@ -3,6 +3,8 @@
 #include "bitcoin.h"
 #include "db.h"
 
+#define NTHREADS 100
+
 using namespace std;
 
 extern "C" {
@@ -17,7 +19,9 @@ extern "C" void* ThreadCrawler(void* data) {
     CIPPort ip;
     int wait = 5;
     if (!db.Get(ip, wait)) {
-      Sleep(wait*1000);
+      wait *= 1000;
+      wait += rand() % (500 * NTHREADS);
+      Sleep(wait);
       continue;
     }
     int ban = 0;
@@ -75,13 +79,13 @@ int main(void) {
   for (vector<CIP>::iterator it = ips.begin(); it != ips.end(); it++) {
     db.Add(CIPPort(*it, 8333));
   }
-  pthread_t thread[NTHREADS];
-  for (int i=0; i<NTHREADS-2; i++) {
+  pthread_t thread[NTHREADS+2];
+  for (int i=0; i<NTHREADS; i++) {
     pthread_create(&thread[i], NULL, ThreadCrawler, NULL);
   }
-  pthread_create(&thread[NTHREADS-2], NULL, ThreadDumper, NULL);
-  pthread_create(&thread[NTHREADS-1], NULL, ThreadDNS, NULL);
-  for (int i=0; i<NTHREADS; i++) {
+  pthread_create(&thread[NTHREADS], NULL, ThreadDumper, NULL);
+  pthread_create(&thread[NTHREADS+1], NULL, ThreadDNS, NULL);
+  for (int i=0; i<NTHREADS+2; i++) {
     void* res;
     pthread_join(thread[i], &res);
   }
