@@ -44,12 +44,21 @@ extern "C" int GetIPList(struct in_addr *addr, int max, int ipv4only) {
     if ((*it).GetInAddr(&addr[n]))
       n++;
   }
+  // permute list
+  for (int i=0; i<n; i++) {
+    int k = i + (rand() % (n-i));
+    if (i != k) {
+      struct in_addr sw = addr[i];
+      addr[i] = addr[k];
+      addr[k] = sw;
+    }
+  }
   return n;
 }
 
 extern "C" void* ThreadDNS(void*) {
   dns_opt_t opt;
-  opt.host = "seedtest.bitcoin.sipa.be";
+  opt.host = "seed.bitcoin.sipa.be";
   opt.ns = "vps.sipa.be";
   opt.mbox = "sipa.ulyssis.org";
   opt.datattl = 60;

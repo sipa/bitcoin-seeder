@@ -295,8 +295,8 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   
   // A records
   if ((typ == TYPE_A || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY)) {
-    struct in_addr addr[20];
-    int naddr = opt->cb(addr, 20, 1);
+    struct in_addr addr[32];
+    int naddr = opt->cb(addr, 32, 1);
     int n = 0;
     while (n < naddr) {
       int ret = write_record_a(&outpos, outend - auth_size, "", offset, CLASS_IN, opt->datattl, &addr[n]);
