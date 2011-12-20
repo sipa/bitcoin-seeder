@@ -17,8 +17,8 @@ class CAddrInfo {
 private:
   CIPPort ip;
   uint64_t services;
-  time_t lastTry;
-  time_t ourLastTry;
+  int64 lastTry;
+  int64 ourLastTry;
   double reliability;
   double timing;
   double weight;
@@ -35,6 +35,21 @@ public:
   void Update(bool good);
   
   friend class CAddrDb;
+  
+  IMPLEMENT_SERIALIZE (
+    int version = 0;
+    READWRITE(version);
+    READWRITE(ip);
+    READWRITE(services);
+    READWRITE(lastTry);
+    READWRITE(ourLastTry);
+    READWRITE(reliability);
+    READWRITE(timing);
+    READWRITE(weight);
+    READWRITE(count);
+    READWRITE(total);
+    READWRITE(success);
+  )
 };
 
 //             seen nodes
@@ -47,7 +62,7 @@ public:
 
 class CAddrDb {
 private:
-  CCriticalSection cs;
+  mutable CCriticalSection cs;
   int nId; // number of address id's
   std::map<int, CAddrInfo> idToInfo; // map address id to address info (b,c,d)
   std::map<CIPPort, int> ipToId; // map ip to id (b,c,d)
@@ -66,6 +81,53 @@ protected:
   void GetIPs_(std::set<CIP>& ips, int max, bool fOnlyIPv4);
 
 public:
+
+  IMPLEMENT_SERIALIZE (({
+    int nVersion = 0;
+    READWRITE(nVersion);
+    CRITICAL_BLOCK(cs) {
+      if (fWrite) {
+        CAddrDb *db = const_cast<CAddrDb*>(this);
+        int nOur = ourId.size();
+        int nUnk = unkId.size();
+        READWRITE(nOur);
+        READWRITE(nUnk);
+        for (std::deque<int>::const_iterator it = ourId.begin(); it != ourId.end(); it++) {
+          std::map<int, CAddrInfo>::iterator ci = db->idToInfo.find(*it);
+          READWRITE((*ci).second);
+        }
+        for (std::set<int>::const_iterator it = unkId.begin(); it != unkId.end(); it++) {
+          std::map<int, CAddrInfo>::iterator ci = db->idToInfo.find(*it);
+          READWRITE((*ci).second);
+        }
+      } else {
+        CAddrDb *db = const_cast<CAddrDb*>(this);
+        db->nId = 0;
+        int nOur, nUnk;
+        READWRITE(nOur);
+        READWRITE(nUnk);
+        for (int i=0; i<nOur; i++) {
+          CAddrInfo info;
+          READWRITE(info);
+          int id = db->nId++;
+          db->idToInfo[id] = info;
+          db->ipToId[info.ip] = id;
+          db->ourId.push_back(id);
+          if (info.IsGood()) db->goodId.insert(id);
+        }
+        for (int i=0; i<nUnk; i++) {
+          CAddrInfo info;
+          READWRITE(info);
+          int id = db->nId++;
+          db->idToInfo[id] = info;
+          db->ipToId[info.ip] = id;
+          db->unkId.insert(id);
+        }
+      }
+      READWRITE(banned);
+    }
+  });)
+  
   void Stats() {
     CRITICAL_BLOCK(cs)
       printf("**** %i good, %lu our, %i unk, %i banned; %i known ips\n", (int)goodId.size(), (unsigned long)ourId.size(), (int)unkId.size(), (int)banned.size(), (int)ipToId.size());

@@ -49,18 +49,37 @@ extern "C" void* ThreadDNS(void*) {
   dnsserver();
 }
 
+extern "C" void* ThreadDumper(void*) {
+  do {
+    Sleep(100000);
+    {
+      FILE *f = fopen("dnsseed.dat","w+");
+      if (f) {
+        CAutoFile cf(f);
+        cf << db;
+      }
+    }
+  } while(1);
+}
+
 #define NTHREADS 100
 
 int main(void) {
+  FILE *f = fopen("dnsseed.dat","r");
+  if (f) {
+    CAutoFile cf(f);
+    cf >> db;
+  }
   vector<CIP> ips;
   LookupHost("dnsseed.bluematt.me", ips);
   for (vector<CIP>::iterator it = ips.begin(); it != ips.end(); it++) {
     db.Add(CIPPort(*it, 8333));
   }
   pthread_t thread[NTHREADS];
-  for (int i=0; i<NTHREADS-1; i++) {
+  for (int i=0; i<NTHREADS-2; i++) {
     pthread_create(&thread[i], NULL, ThreadCrawler, NULL);
   }
+  pthread_create(&thread[NTHREADS-2], NULL, ThreadDumper, NULL);
   pthread_create(&thread[NTHREADS-1], NULL, ThreadDNS, NULL);
   for (int i=0; i<NTHREADS; i++) {
     void* res;
