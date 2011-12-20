@@ -5,6 +5,8 @@ using namespace std;
 
 void CAddrInfo::Update(bool good) {
     uint32_t now = time(NULL);
+    if (ourLastTry == 0)
+      ourLastTry = now - MIN_RETRY;
     double f =  exp(-(now-ourLastTry)/TAU);
     reliability = reliability * f + (good ? (1.0-f) : 0);
     timing = (timing + (now-ourLastTry) * weight) * f;
@@ -14,44 +16,41 @@ void CAddrInfo::Update(bool good) {
     ourLastTry = now;
     total++;
     if (good) success++;
-    printf("%s: got %s result: weight=%g reliability=%g avgage=%g count=%g success=%i/%i\n", ip.ToString().c_str(), good ? "good" : "bad", weight, reliability/weight, timing/weight, count/weight, success, total);
+    printf("%s: got %s result: weight=%g reliability=%g avgage=%g count=%g success=%i/%i\n", ToString(ip).c_str(), good ? "good" : "bad", weight, GetReliability(), GetAvgAge(), GetCount(), success, total);
 }
 
 bool CAddrDb::Get_(CIPPort &ip, int &wait) {
-  int cont = 0;
   int64 now = time(NULL);
-  do {
-    cont = 0;
-    int tot = unkId.size();
-    deque<int>::iterator it = ourId.begin();
-    while (it < ourId.end()) {
-      if (now - idToInfo[*it].ourLastTry > MIN_RETRY) {
-        tot++;
-        it++;
-      } else {
-        break;
-      }
-    }
-    if (tot == 0) {
-      if (ourId.size() > 0) {
-        wait = MIN_RETRY - (now - idToInfo[ourId.front()].ourLastTry);
-      }
-      return false;
-    }
-    int rnd = rand() % tot;
-    if (rnd < unkId.size()) {
-      set<int>::iterator it = unkId.begin();
-      ip = idToInfo[*it].ip;
-      unkId.erase(it);
-      printf("From UNK: %s\n", ip.ToString().c_str());
+  int tot = unkId.size();
+  deque<int>::iterator it = ourId.begin();
+  while (it < ourId.end()) {
+    if (now - idToInfo[*it].ourLastTry > MIN_RETRY) {
+      tot++;
+      it++;
     } else {
-      int ret = ourId.front();
-      if (time(NULL) - idToInfo[ret].ourLastTry < MIN_RETRY) return false;
-      ourId.pop_front();
-      ip = idToInfo[ret].ip;
-      printf("From OUR: %s (size = %i)\n", ip.ToString().c_str(), (int)ourId.size());
+      break;
     }
-  } while(cont);
+  }
+  if (tot == 0) {
+    if (ourId.size() > 0) {
+      wait = MIN_RETRY - (now - idToInfo[ourId.front()].ourLastTry);
+    }
+    return false;
+  }
+  int rnd = rand() % tot;
+  if (rnd < unkId.size()) {
+    set<int>::reverse_iterator it = unkId.rbegin();
+    ip = idToInfo[*it].ip;
+    unkId.erase(*it);
+    printf("%s: new node\n", ToString(ip).c_str());
+  } else {
+    int ret = ourId.front();
+    if (time(NULL) - idToInfo[ret].ourLastTry < MIN_RETRY) return false;
+    ourId.pop_front();
+    ip = idToInfo[ret].ip;
+    printf("%s: old node\n", ToString(ip).c_str());
+  }
+  fDirty = true;
   return true;
 }
 
@@ -62,18 +61,17 @@ int CAddrDb::Lookup_(const CIPPort &ip) {
 }
 
 void CAddrDb::Good_(const CIPPort &addr) {
-  printf("%s: good!\n", addr.ToString().c_str());
   int id = Lookup_(addr);
-  printf("%s: good (id=%i)!\n", addr.ToString().c_str(), id);
   if (id == -1) return;
   unkId.erase(id);
   banned.erase(addr);
   CAddrInfo &info = idToInfo[id];
   info.Update(true);
-  if (info.IsGood()) {
+  if (info.IsGood() && goodId.count(id)==0) {
     goodId.insert(id);
-    printf("%s: good; %i good nodes now\n", addr.ToString().c_str(), (int)goodId.size());
+    printf("%s: good; %i good nodes now\n", ToString(addr).c_str(), (int)goodId.size());
   }
+  fDirty = true;
   ourId.push_back(id);
 }
 
@@ -86,22 +84,23 @@ void CAddrDb::Bad_(const CIPPort &addr, int ban)
   info.Update(false);
   uint32_t now = time(NULL);
   if (info.IsTerrible()) {
-    printf("%s: terrible\n", addr.ToString().c_str());
+    printf("%s: terrible\n", ToString(addr).c_str());
     if (ban < 604800) ban = 604800;
   }
   if (ban > 0) {
-    printf("%s: ban %i seconds\n", addr.ToString().c_str(), ban);
+    printf("%s: ban for %i seconds\n", ToString(addr).c_str(), ban);
     banned[info.ip] = ban + now;
     ipToId.erase(info.ip);
     goodId.erase(id);
     idToInfo.erase(id);
   } else {
-    if (!info.IsGood()) {
+    if (!info.IsGood() && goodId.count(id)==1) {
       goodId.erase(id);
-      printf("%s: not good; %i good nodes left\n", addr.ToString().c_str(), (int)goodId.size());
+      printf("%s: not good; %i good nodes left\n", ToString(addr).c_str(), (int)goodId.size());
     }
     ourId.push_back(id);
   }
+  fDirty = true;
 }
 
 void CAddrDb::Skipped_(const CIPPort &addr)
@@ -110,7 +109,8 @@ void CAddrDb::Skipped_(const CIPPort &addr)
   if (id == -1) return;
   unkId.erase(id);
   ourId.push_back(id);
-  printf("%s: skipped\n", addr.ToString().c_str());
+  printf("%s: skipped\n", ToString(addr).c_str());
+  fDirty = true;
 }
 
 
@@ -127,10 +127,12 @@ void CAddrDb::Add_(const CAddress &addr) {
   }
   if (ipToId.count(ipp)) {
     CAddrInfo &ai = idToInfo[ipToId[ipp]];
-    if (addr.nTime > ai.lastTry)
+    if (addr.nTime > ai.lastTry || ai.services != addr.nServices)
+    {
       ai.lastTry = addr.nTime;
-    ai.services |= addr.nServices;
-    printf("%s: updated\n", addr.ToString().c_str());
+      ai.services |= addr.nServices;
+//      printf("%s: updated\n", ToString(addr).c_str());
+    }
     return;
   }
   CAddrInfo ai;
@@ -145,8 +147,9 @@ void CAddrDb::Add_(const CAddress &addr) {
   int id = nId++;
   idToInfo[id] = ai;
   ipToId[ipp] = id;
-  printf("%s: added as id %i\n", ipp.ToString().c_str(), ipToId[ipp]);
+  printf("%s: added\n", ToString(ipp).c_str(), ipToId[ipp]);
   unkId.insert(id);
+  fDirty = true;
 }
 
 void CAddrDb::GetIPs_(set<CIP>& ips, int max, bool fOnlyIPv4) {

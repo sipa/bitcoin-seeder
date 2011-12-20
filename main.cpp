@@ -8,7 +8,7 @@
 using namespace std;
 
 extern "C" {
-// #include "dns.h"
+#include "dns.h"
 }
 
 CAddrDb db;
@@ -47,10 +47,16 @@ extern "C" int GetIPList(struct in_addr *addr, int max, int ipv4only) {
   return n;
 }
 
-extern "C" int dnsserver(void);
-
 extern "C" void* ThreadDNS(void*) {
-  dnsserver();
+  dns_opt_t opt;
+  opt.host = "seedtest.bitcoin.sipa.be";
+  opt.ns = "vps.sipa.be";
+  opt.mbox = "sipa.ulyssis.org";
+  opt.datattl = 60;
+  opt.nsttl = 40000;
+  opt.cb = GetIPList;
+  opt.port = 53;
+  dnsserver(&opt);
 }
 
 extern "C" void* ThreadDumper(void*) {

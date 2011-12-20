@@ -13,6 +13,12 @@
 #define TAU 86400.0
 #define MIN_RETRY 1000
 
+std::string static inline ToString(const CIPPort &ip) {
+  std::string str = ip.ToString();
+  while (str.size() < 22) str += ' ';
+  return str;
+}
+
 class CAddrInfo {
 private:
   CIPPort ip;
@@ -26,11 +32,14 @@ private:
   int total;
   int success;
 public:
+  double GetCount() const { return count; }
+  double GetAvgAge() const { return timing/weight; }
+  double GetReliability() const { return reliability/weight; }
   bool IsGood() {
-    return (weight > 0 && reliability/weight > 0.8 && timing/weight < 86400) && ip.GetPort() == 8333;
+    return (weight > 0 && GetReliability() > 0.8 && GetAvgAge() < 86400 && ip.GetPort() == 8333 && ip.IsRoutable());
   }
   bool IsTerrible() {
-    return (weight > 0.5 & reliability/weight < 0.2 && timing/weight < 86400 && count/weight > 2.0);
+    return ((weight > 0.1 && GetCount() > 5 && GetReliability() < 0.05) || (weight > 0.5 && GetReliability() < 0.2 && GetAvgAge() > 7200 && GetCount() > 5));
   }
   void Update(bool good);
   
@@ -54,9 +63,9 @@ public:
 
 //             seen nodes
 //            /          \
-// (a) banned nodes    tracked nodes
-//                    /             \
-//               tried nodes   (b) unknown nodes
+// (a) banned nodes       available nodes--------------
+//                       /       |                     \
+//               tracked nodes   (b) unknown nodes   (e) active nodes
 //              /           \
 //     (d) good nodes   (c) non-good nodes 
 
@@ -64,24 +73,36 @@ class CAddrDb {
 private:
   mutable CCriticalSection cs;
   int nId; // number of address id's
-  std::map<int, CAddrInfo> idToInfo; // map address id to address info (b,c,d)
-  std::map<CIPPort, int> ipToId; // map ip to id (b,c,d)
+  std::map<int, CAddrInfo> idToInfo; // map address id to address info (b,c,d,e)
+  std::map<CIPPort, int> ipToId; // map ip to id (b,c,d,e)
   std::deque<int> ourId; // sequence of tried nodes, in order we have tried connecting to them (c,d)
   std::set<int> unkId; // set of nodes not yet tried (b)
-  std::set<int> goodId; // set of good nodes  (d)
+  std::set<int> goodId; // set of good nodes  (d, good e)
   std::map<CIPPort, time_t> banned; // nodes that are banned, with their unban time (a)
+  bool fDirty;
   
 protected:
-  void Add_(const CAddress &addr);
-  void Good_(const CIPPort &ip);
-  void Bad_(const CIPPort &ip, int ban);
-  void Skipped_(const CIPPort &ip);
-  bool Get_(CIPPort &ip, int& wait);
-  int Lookup_(const CIPPort &ip);
-  void GetIPs_(std::set<CIP>& ips, int max, bool fOnlyIPv4);
+  // internal routines that assume proper locks are acquired
+  void Add_(const CAddress &addr);        // add an address
+  bool Get_(CIPPort &ip, int& wait);      // get an IP to test (must call Good_, Bad_, or Skipped_ on result afterwards)
+  void Good_(const CIPPort &ip);          // mark an IP as good (must have been returned by Get_)
+  void Bad_(const CIPPort &ip, int ban);  // mark an IP as bad (and optionally ban it) (must have been returned by Get_)
+  void Skipped_(const CIPPort &ip);       // mark an IP as skipped (must have been returned by Get_)
+  int Lookup_(const CIPPort &ip);         // look up id of an IP
+  void GetIPs_(std::set<CIP>& ips, int max, bool fOnlyIPv4); // get a random set of IPs (shared lock only)
 
 public:
 
+  // seriazlization code
+  // format:
+  //   nVersion (0 for now)
+  //   nOur (number of ips in (c,d))
+  //   nUnk (number of ips in (b))
+  //   CAddrInfo[nOur]
+  //   CAddrInfo[nUnk]
+  //   banned
+  // acquires a shared lock (this does not suffice for read mode, but we assume that only happens at startup, single-threaded)
+  // this way, dumping does not interfere with GetIPs_, which is called from the DNS thread
   IMPLEMENT_SERIALIZE (({
     int nVersion = 0;
     READWRITE(nVersion);
@@ -109,28 +130,44 @@ public:
         for (int i=0; i<nOur; i++) {
           CAddrInfo info;
           READWRITE(info);
-          int id = db->nId++;
-          db->idToInfo[id] = info;
-          db->ipToId[info.ip] = id;
-          db->ourId.push_back(id);
-          if (info.IsGood()) db->goodId.insert(id);
+          if (!info.IsTerrible()) {
+            int id = db->nId++;
+            db->idToInfo[id] = info;
+            db->ipToId[info.ip] = id;
+            db->ourId.push_back(id);
+            if (info.IsGood()) db->goodId.insert(id);
+          }
         }
         for (int i=0; i<nUnk; i++) {
           CAddrInfo info;
           READWRITE(info);
-          int id = db->nId++;
-          db->idToInfo[id] = info;
-          db->ipToId[info.ip] = id;
-          db->unkId.insert(id);
+          if (!info.IsTerrible()) {
+            int id = db->nId++;
+            db->idToInfo[id] = info;
+            db->ipToId[info.ip] = id;
+            db->unkId.insert(id);
+          }
         }
+        db->fDirty = true;
       }
       READWRITE(banned);
     }
   });)
   
+  // print statistics
   void Stats() {
-    CRITICAL_BLOCK(cs)
-      printf("**** %i good, %lu our, %i unk, %i banned; %i known ips\n", (int)goodId.size(), (unsigned long)ourId.size(), (int)unkId.size(), (int)banned.size(), (int)ipToId.size());
+    SHARED_CRITICAL_BLOCK(cs) {
+      if (fDirty) {
+        printf("**** %i available (%i tracked, %i new, %i active), %i banned; %i good\n", 
+               (int)idToInfo.size(),
+               (int)ourId.size(),
+               (int)unkId.size(),
+               (int)idToInfo.size() - (int)ourId.size() - (int)unkId.size(),
+               (int)banned.size(),
+               (int)goodId.size());
+        fDirty = false; // hopefully atomic
+      }
+    }
   }
   void Add(const CAddress &addr) {
     CRITICAL_BLOCK(cs)

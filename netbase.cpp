@@ -274,7 +274,6 @@ bool CIPPort::ConnectSocket(SOCKET& hSocketRet, int nTimeout) const
         return false;
     }
 
-    printf("%s: connected\n", ToString().c_str());
     hSocketRet = hSocket;
     return true;
 }
