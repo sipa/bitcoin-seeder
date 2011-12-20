@@ -18,17 +18,30 @@ void CAddrInfo::Update(bool good) {
 }
 
 bool CAddrDb::Get_(CIPPort &ip) {
-  int tot = unkId.size() + ourId.size();
-  if (tot == 0) return false;
-  int rnd = rand() % tot;
-  if (tot < unkId.size()) {
-    set<int>::iterator it = unkId.begin();
-    return *it;
-  } else {
-    int ret = ourId.front();
-    ourId.pop_front();
-    return ret;
-  }
+  int cont = 0;
+  do {
+    cont = 0;
+    int tot = unkId.size() + ourId.size();
+    if (tot == 0) return false;
+    int rnd = rand() % tot;
+    if (rnd < unkId.size()) {
+      set<int>::iterator it = unkId.begin();
+      ip = idToInfo[*it].ip;
+      unkId.erase(it);
+      printf("From UNK: %s\n", ip.ToString().c_str());
+    } else {
+      int ret = ourId.front();
+      ourId.pop_front();
+      if (unkId.size() > 0 && time(NULL) - idToInfo[ret].ourLastTry < MIN_RETRY) {
+        ourId.push_back(ret);
+        cont=1;
+        continue;
+      }
+      ip = idToInfo[ret].ip;
+      printf("From OUR: %s (size = %i)\n", ip.ToString().c_str(), (int)ourId.size());
+    }
+  } while(cont);
+  return true;
 }
 
 int CAddrDb::Lookup_(const CIPPort &ip) {
@@ -38,7 +51,9 @@ int CAddrDb::Lookup_(const CIPPort &ip) {
 }
 
 void CAddrDb::Good_(const CIPPort &addr) {
+  printf("%s: good!\n", addr.ToString().c_str());
   int id = Lookup_(addr);
+  printf("%s: good (id=%i)!\n", addr.ToString().c_str(), id);
   if (id == -1) return;
   unkId.erase(id);
   banned.erase(addr);
@@ -94,7 +109,7 @@ void CAddrDb::Add_(const CAddress &addr) {
   CIPPort ipp(addr);
   if (banned.count(ipp)) {
     time_t bantime = banned[ipp];
-    if (bantime < time(NULL))
+    if (bantime < time(NULL) && addr.nTime > bantime)
       banned.erase(ipp);
     else
       return;
@@ -119,8 +134,8 @@ void CAddrDb::Add_(const CAddress &addr) {
   int id = nId++;
   idToInfo[id] = ai;
   ipToId[ipp] = id;
+  printf("%s: added as id %i\n", ipp.ToString().c_str(), ipToId[ipp]);
   unkId.insert(id);
-  printf("%s: added\n", addr.ToString().c_str());
 }
 
 void CAddrDb::GetIPs_(set<CIP>& ips, int max, bool fOnlyIPv4) {

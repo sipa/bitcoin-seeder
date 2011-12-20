@@ -86,7 +86,7 @@ CAddress::CAddress() : CIPPort()
     Init();
 }
 
-CAddress::CAddress(CIPPort &ipIn, uint64 nServicesIn) : CIPPort(ipIn)
+CAddress::CAddress(CIPPort ipIn, uint64 nServicesIn) : CIPPort(ipIn)
 {
     Init();
     nServices = nServicesIn;

@@ -66,7 +66,7 @@ class CAddress : public CIPPort
 {
     public:
         CAddress();
-        CAddress(CIPPort& ipIn, uint64 nServicesIn=NODE_NETWORK);
+        CAddress(CIPPort ipIn, uint64 nServicesIn=NODE_NETWORK);
 
         void Init();
 

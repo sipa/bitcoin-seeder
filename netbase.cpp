@@ -177,7 +177,11 @@ bool CIPPort::ConnectSocket(SOCKET& hSocketRet, int nTimeout) const
 
     SOCKET hSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (hSocket == INVALID_SOCKET)
+    {
+        printf("Failed to create socket: %s\n", strerror(errno));
         return false;
+    }
+
 #ifdef SO_NOSIGPIPE
     int set = 1;
     setsockopt(hSocket, SOL_SOCKET, SO_NOSIGPIPE, (void*)&set, sizeof(int));
@@ -194,8 +198,8 @@ bool CIPPort::ConnectSocket(SOCKET& hSocketRet, int nTimeout) const
     if (fcntl(hSocket, F_SETFL, fFlags | O_NONBLOCK) == -1)
 #endif
     {
+        printf("Failed to set socket NONBLOCK\n");
         closesocket(hSocket);
-        return false;
     }
 
 
@@ -265,10 +269,12 @@ bool CIPPort::ConnectSocket(SOCKET& hSocketRet, int nTimeout) const
     if (fcntl(hSocket, F_SETFL, fFlags & !O_NONBLOCK) == SOCKET_ERROR)
 #endif
     {
+        printf("Failed to set socket blocking\n");
         closesocket(hSocket);
         return false;
     }
 
+    printf("%s: connected\n", ToString().c_str());
     hSocketRet = hSocket;
     return true;
 }
@@ -463,12 +469,12 @@ bool operator==(const CIP& a, const CIP& b)
 
 bool operator!=(const CIP& a, const CIP& b)
 {
-    return (memcmp(a.ip, b.ip, 16) == 0);
+    return (memcmp(a.ip, b.ip, 16) != 0);
 }
 
 bool operator<(const CIP& a, const CIP& b)
 {
-    return (memcmp(a.ip, b.ip, 16) <= 0);
+    return (memcmp(a.ip, b.ip, 16) < 0);
 }
 
 bool CIP::GetInAddr(struct in_addr* pipv4Addr) const
@@ -652,7 +658,7 @@ bool operator!=(const CIPPort& a, const CIPPort& b)
 
 bool operator<(const CIPPort& a, const CIPPort& b)
 {
-    return (operator<((CIP)a, (CIP)b) || a.port < b.port);
+    return (operator<((CIP)a, (CIP)b) || (operator==((CIP)a, (CIP)b) && (a.port < b.port)));
 }
 
 bool CIPPort::GetSockAddr(struct sockaddr_in* paddr) const

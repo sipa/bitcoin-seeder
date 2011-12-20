@@ -11,6 +11,7 @@
 #include "util.h"
 
 #define TAU 86400.0
+#define MIN_RETRY 1000
 
 class CAddrInfo {
 private:
@@ -26,7 +27,7 @@ private:
   int success;
 public:
   bool IsGood() {
-    return (weight > 0.5 & reliability/weight > 0.8 && timing/weight < 86400 && count/weight > 1.0) && ip.GetPort() == 8333;
+    return (weight > 0 && reliability/weight > 0.8 && timing/weight < 86400) && ip.GetPort() == 8333;
   }
   bool IsTerrible() {
     return (weight > 0.5 & reliability/weight < 0.2 && timing/weight < 86400 && count/weight > 2.0);
@@ -65,6 +66,10 @@ protected:
   void GetIPs_(std::set<CIP>& ips, int max, bool fOnlyIPv4);
 
 public:
+  void Stats() {
+    CRITICAL_BLOCK(cs)
+      printf("**** %i good, %lu our, %i unk, %i banned; %i known ips\n", (int)goodId.size(), (unsigned long)ourId.size(), (int)unkId.size(), (int)banned.size(), (int)ipToId.size());
+  }
   void Add(const CAddress &addr) {
     CRITICAL_BLOCK(cs)
       Add_(addr);

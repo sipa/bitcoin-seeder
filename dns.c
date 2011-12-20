@@ -18,6 +18,8 @@ char *host = "seedtest.bitcoin.sipa.be";
 char *ns = "vps.sipa.be";
 char *mbox = "sipa.ulyssis.org";
 
+extern int GetIPList(struct in_addr *addr, int max, int ipv4only);
+
 typedef enum {
   CLASS_IN = 1,
   QCLASS_ANY = 255
@@ -300,16 +302,18 @@ ssize_t static dnshandle(const unsigned char *inbuf, size_t insize, unsigned cha
   
   // A records
   if ((typ == TYPE_A || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY)) {
-    uint32_t ip = 0x01101102;
-    do {
-      int ret = write_record_a(&outpos, outend - auth_size, "", offset, CLASS_IN, datattl, (const struct in_addr*)(&ip));
+    struct in_addr addr[20];
+    int naddr = GetIPList(addr, 20, 1);
+    int n = 0;
+    while (n < naddr) {
+      int ret = write_record_a(&outpos, outend - auth_size, "", offset, CLASS_IN, datattl, &addr[n]);
 //      printf("wrote A record: %i\n", ret);
       if (!ret) {
-        ip += 0x01101102;
+        n++;
         outbuf[7]++;
       } else
         break;
-    } while(1);
+    }
   }
   
   // Authority section
@@ -358,10 +362,5 @@ int dnsserver(void) {
         sendto(s, outbuf, ret, 0, (struct sockaddr*)&si_other, slen);
     }
   } while(1);
-  return 0;
-}
-
-int main(void) {
-  dnsserver();
   return 0;
 }

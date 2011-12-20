@@ -3,6 +3,9 @@
 
 #include <pthread.h>
 #include <errno.h>
+#include <openssl/sha.h>
+
+#include "uint256.h"
 
 #define loop                for (;;)
 #define BEGIN(a)            ((char*)&(a))
@@ -63,5 +66,22 @@ public:
 
 #define CRITICAL_BLOCK(cs)     \
     if (CCriticalBlock criticalblock = CCriticalBlock(cs))
+
+template<typename T1> inline uint256 Hash(const T1 pbegin, const T1 pend)
+{
+    static unsigned char pblank[1];
+    uint256 hash1;
+    SHA256((pbegin == pend ? pblank : (unsigned char*)&pbegin[0]), (pend - pbegin) * sizeof(pbegin[0]), (unsigned char*)&hash1);
+    uint256 hash2;
+    SHA256((unsigned char*)&hash1, sizeof(hash1), (unsigned char*)&hash2);
+    return hash2;
+}
+
+void static inline Sleep(int nMilliSec) {
+  struct timespec wa;
+  wa.tv_sec = nMilliSec/1000;
+  wa.tv_nsec = (nMilliSec % 1000) * 1000000;
+  nanosleep(&wa, NULL);
+}
 
 #endif
