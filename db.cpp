@@ -7,11 +7,6 @@ void CAddrInfo::Update(bool good) {
     uint32_t now = time(NULL);
     if (ourLastTry == 0)
       ourLastTry = now - MIN_RETRY;
-    double f =  exp(-(now-ourLastTry)/TAU);
-    reliability = reliability * f + (good ? (1.0-f) : 0);
-    timing = (timing + (now-ourLastTry) * weight) * f;
-    count = count * f + 1;
-    weight = weight * f + (1.0-f);
     lastTry = now;
     ourLastTry = now;
     total++;

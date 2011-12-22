@@ -19,6 +19,18 @@ std::string static inline ToString(const CIPPort &ip) {
   return str;
 }
 
+template<float tau> class CAddrStat {
+private:
+  float reliability;
+  float timing;
+  float count;
+  float weight;
+public:
+  void Update(bool good, int64 tim) {
+    
+  }
+}
+
 class CAddrInfo {
 private:
   CIPPort ip;
