@@ -3,7 +3,7 @@
 #include "bitcoin.h"
 #include "db.h"
 
-#define NTHREADS 100
+#define NTHREADS 16
 
 using namespace std;
 
@@ -26,10 +26,11 @@ extern "C" void* ThreadCrawler(void* data) {
     }
     int ban = 0;
     vector<CAddress> addr;
-    bool ret = TestNode(ip,ban,addr);
+    int clientV = 0;
+    bool ret = TestNode(ip,ban,clientV,addr);
     db.Add(addr);
     if (ret) {
-      db.Good(ip);
+      db.Good(ip, clientV);
     } else {
       db.Bad(ip, ban);
     }
@@ -80,8 +81,6 @@ extern "C" void* ThreadDumper(void*) {
     }
   } while(1);
 }
-
-#define NTHREADS 100
 
 int main(void) {
   FILE *f = fopen("dnsseed.dat","r");

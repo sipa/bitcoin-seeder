@@ -19,7 +19,6 @@ class CNode {
   unsigned int nHeaderStart;
   unsigned int nMessageStart;
   int nVersion;
-  int nRecvVersion;
   string strSubVer;
   int nStartingHeight;
   vector<CAddress> *vAddr;
@@ -82,11 +81,6 @@ class CNode {
   }
  
   void GotVersion() {
-    if (nVersion < MIN_VERSION) {
-      printf("%s: BAD (version %i is below %i)\n", ToString(you).c_str(), nVersion, MIN_VERSION);
-      ban = 1000000;
-      return;
-    }
     printf("%s: version %i\n", ToString(you).c_str(), nVersion);
     BeginMessage("getaddr");
     EndMessage();
@@ -108,12 +102,6 @@ class CNode {
         vRecv >> strSubVer;
       if (nVersion >= 209 && !vRecv.empty())
         vRecv >> nStartingHeight;
-      
-      if (!(you.nServices & NODE_NETWORK)) {
-        printf("%s: BAD (no NODE_NETWORK)\n", ToString(you).c_str());
-        ban = 1000000;
-        return true;
-      }
       
       if (nVersion >= 209) {
         BeginMessage("verack");
@@ -204,7 +192,7 @@ class CNode {
   }
   
 public:
-  CNode(const CIPPort& ip, vector<CAddress>& vAddrIn) : you(ip), nHeaderStart(-1), nMessageStart(-1), vAddr(&vAddrIn), ban(0), doneAfter(0) {
+  CNode(const CIPPort& ip, vector<CAddress>& vAddrIn) : you(ip), nHeaderStart(-1), nMessageStart(-1), vAddr(&vAddrIn), ban(0), doneAfter(0), nVersion(0) {
     vSend.SetType(SER_NETWORK);
     vSend.SetVersion(0);
     vRecv.SetType(SER_NETWORK);
@@ -264,9 +252,13 @@ public:
   int GetBan() {
     return ban;
   }
+  
+  int GetClientVersion() {
+    return nVersion;
+  }
 };
 
-bool TestNode(const CIPPort &cip, int &ban, vector<CAddress>& vAddr) {
+bool TestNode(const CIPPort &cip, int &ban, int &clientV, vector<CAddress>& vAddr) {
   CNode node(cip, vAddr);
   bool ret = node.Run();
   if (!ret) {
@@ -274,6 +266,7 @@ bool TestNode(const CIPPort &cip, int &ban, vector<CAddress>& vAddr) {
   } else {
     ban = 0;
   }
+  clientV = node.GetClientVersion();
 //  printf("%s: %s!!!\n", cip.ToString().c_str(), ret ? "GOOD" : "BAD");
   return ret;
 }

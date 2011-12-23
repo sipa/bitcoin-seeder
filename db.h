@@ -10,7 +10,6 @@
 #include "protocol.h"
 #include "util.h"
 
-#define TAU 86400.0
 #define MIN_RETRY 1000
 
 std::string static inline ToString(const CIPPort &ip) {
@@ -19,17 +18,29 @@ std::string static inline ToString(const CIPPort &ip) {
   return str;
 }
 
-template<float tau> class CAddrStat {
+class CAddrStat {
 private:
-  float reliability;
-  float timing;
-  float count;
   float weight;
+  float count;
+  float reliability;
 public:
-  void Update(bool good, int64 tim) {
-    
+  CAddrStat() : weight(0), count(0), reliability(0) {}
+
+  void Update(bool good, int64 age, double tau) {
+    double f =  exp(-age/tau);
+    reliability = reliability * f + (good ? (1.0-f) : 0);
+    count = count * f + 1;
+    weight = weight * f + (1.0-f);
   }
-}
+  
+  IMPLEMENT_SERIALIZE (
+    READWRITE(weight);
+    READWRITE(count);
+    READWRITE(reliability);
+  )
+
+  friend class CAddrInfo;
+};
 
 class CAddrInfo {
 private:
@@ -37,39 +48,67 @@ private:
   uint64_t services;
   int64 lastTry;
   int64 ourLastTry;
-  double reliability;
-  double timing;
-  double weight;
-  double count;
+  int64 ignoreTill;
+  CAddrStat stat2H;
+  CAddrStat stat8H;
+  CAddrStat stat1D;
+  CAddrStat stat1W;
+  int clientVersion;
   int total;
   int success;
 public:
-  double GetCount() const { return count; }
-  double GetAvgAge() const { return timing/weight; }
-  double GetReliability() const { return reliability/weight; }
+  CAddrInfo() : services(0), lastTry(0), ourLastTry(0), ignoreTill(0), clientVersion(0), total(0), success(0) {}
+  
   bool IsGood() {
-    return (weight > 0 && GetReliability() > 0.8 && GetAvgAge() < 86400 && ip.GetPort() == 8333 && ip.IsRoutable());
+    if (ip.GetPort() != 8333) return false;
+    if (!(services & NODE_NETWORK)) return false;
+    if (!ip.IsRoutable()) return false;
+    if (!ip.IsIPv4()) return false;
+    if (clientVersion && clientVersion < 32400) return false;
+
+    if (total <= 3 && success * 2 >= total) return true;
+
+    if (stat2H.reliability > 0.7 && stat2H.count > 3) return true;
+    if (stat8H.reliability > 0.6 && stat8H.count > 6) return true;
+    if (stat1D.reliability > 0.5 && stat1D.count > 12) return true;
+    if (stat1W.reliability > 0.4 && stat1W.count > 24) return true;
+    
+    return false;
   }
-  bool IsTerrible() {
-    return ((weight > 0.1 && GetCount() > 5 && GetReliability() < 0.05) || (weight > 0.5 && GetReliability() < 0.2 && GetAvgAge() > 7200 && GetCount() > 5));
+  int GetBanTime() {
+    if (IsGood()) return 0;
+    if (clientVersion && clientVersion < 31900) { return 1000000; }
+    if (stat1D.reliability < 0.01 && stat1D.count > 5) { return 500000; }
+    if (stat1W.reliability - stat1W.weight + 1.0 < 0.10 && stat1W.count > 4) { return 240*3600; }
+    return 0;
   }
+  int GetIgnoreTime() {
+    if (IsGood()) return 0;
+    if (stat2H.reliability - stat2H.weight + 1.0 < 0.2 && stat2H.count > 3) { return 3*3600; }
+    if (stat8H.reliability - stat8H.weight + 1.0 < 0.2 && stat8H.count > 6) { return 12*3600; }
+    if (stat1D.reliability - stat1D.weight + 1.0 < 0.2 && stat1D.count > 9) { return 36*3600; }
+    return 0;
+  }
+  
   void Update(bool good);
   
   friend class CAddrDb;
   
   IMPLEMENT_SERIALIZE (
-    int version = 0;
+    unsigned char version = 0;
     READWRITE(version);
     READWRITE(ip);
     READWRITE(services);
     READWRITE(lastTry);
     READWRITE(ourLastTry);
-    READWRITE(reliability);
-    READWRITE(timing);
-    READWRITE(weight);
-    READWRITE(count);
+    READWRITE(ignoreTill);
+    READWRITE(stat2H);
+    READWRITE(stat8H);
+    READWRITE(stat1D);
+    READWRITE(stat1W);
     READWRITE(total);
     READWRITE(success);
+    READWRITE(clientVersion);
   )
 };
 
@@ -91,13 +130,13 @@ private:
   std::set<int> unkId; // set of nodes not yet tried (b)
   std::set<int> goodId; // set of good nodes  (d, good e)
   std::map<CIPPort, time_t> banned; // nodes that are banned, with their unban time (a)
-  bool fDirty;
+  int nDirty;
   
 protected:
   // internal routines that assume proper locks are acquired
   void Add_(const CAddress &addr);        // add an address
   bool Get_(CIPPort &ip, int& wait);      // get an IP to test (must call Good_, Bad_, or Skipped_ on result afterwards)
-  void Good_(const CIPPort &ip);          // mark an IP as good (must have been returned by Get_)
+  void Good_(const CIPPort &ip, int clientV); // mark an IP as good (must have been returned by Get_)
   void Bad_(const CIPPort &ip, int ban);  // mark an IP as bad (and optionally ban it) (must have been returned by Get_)
   void Skipped_(const CIPPort &ip);       // mark an IP as skipped (must have been returned by Get_)
   int Lookup_(const CIPPort &ip);         // look up id of an IP
@@ -105,13 +144,11 @@ protected:
 
 public:
 
-  // seriazlization code
+  // serialization code
   // format:
   //   nVersion (0 for now)
-  //   nOur (number of ips in (c,d))
-  //   nUnk (number of ips in (b))
-  //   CAddrInfo[nOur]
-  //   CAddrInfo[nUnk]
+  //   n (number of ips in (b,c,d))
+  //   CAddrInfo[n]
   //   banned
   // acquires a shared lock (this does not suffice for read mode, but we assume that only happens at startup, single-threaded)
   // this way, dumping does not interfere with GetIPs_, which is called from the DNS thread
@@ -121,10 +158,8 @@ public:
     SHARED_CRITICAL_BLOCK(cs) {
       if (fWrite) {
         CAddrDb *db = const_cast<CAddrDb*>(this);
-        int nOur = ourId.size();
-        int nUnk = unkId.size();
-        READWRITE(nOur);
-        READWRITE(nUnk);
+        int n = ourId.size() + unkId.size();
+        READWRITE(n);
         for (std::deque<int>::const_iterator it = ourId.begin(); it != ourId.end(); it++) {
           std::map<int, CAddrInfo>::iterator ci = db->idToInfo.find(*it);
           READWRITE((*ci).second);
@@ -136,31 +171,24 @@ public:
       } else {
         CAddrDb *db = const_cast<CAddrDb*>(this);
         db->nId = 0;
-        int nOur, nUnk;
-        READWRITE(nOur);
-        READWRITE(nUnk);
-        for (int i=0; i<nOur; i++) {
+        int n;
+        READWRITE(n);
+        for (int i=0; i<n; i++) {
           CAddrInfo info;
           READWRITE(info);
-          if (!info.IsTerrible()) {
+          if (!info.GetBanTime()) {
             int id = db->nId++;
             db->idToInfo[id] = info;
             db->ipToId[info.ip] = id;
-            db->ourId.push_back(id);
-            if (info.IsGood()) db->goodId.insert(id);
+            if (info.ourLastTry) {
+              db->ourId.push_back(id);
+              if (info.IsGood()) db->goodId.insert(id);
+            } else {
+              db->unkId.insert(id);
+            }
           }
         }
-        for (int i=0; i<nUnk; i++) {
-          CAddrInfo info;
-          READWRITE(info);
-          if (!info.IsTerrible()) {
-            int id = db->nId++;
-            db->idToInfo[id] = info;
-            db->ipToId[info.ip] = id;
-            db->unkId.insert(id);
-          }
-        }
-        db->fDirty = true;
+        db->nDirty++;
       }
       READWRITE(banned);
     }
@@ -169,7 +197,7 @@ public:
   // print statistics
   void Stats() {
     SHARED_CRITICAL_BLOCK(cs) {
-      if (fDirty) {
+      if (nDirty > 50) {
         printf("**** %i available (%i tracked, %i new, %i active), %i banned; %i good\n", 
                (int)idToInfo.size(),
                (int)ourId.size(),
@@ -177,7 +205,7 @@ public:
                (int)idToInfo.size() - (int)ourId.size() - (int)unkId.size(),
                (int)banned.size(),
                (int)goodId.size());
-        fDirty = false; // hopefully atomic
+        nDirty = 0; // hopefully atomic
       }
     }
   }
@@ -190,9 +218,9 @@ public:
       for (int i=0; i<vAddr.size(); i++)
         Add_(vAddr[i]);
   }
-  void Good(const CIPPort &addr) {
+  void Good(const CIPPort &addr, int clientVersion) {
     CRITICAL_BLOCK(cs)
-      Good_(addr);
+      Good_(addr, clientVersion);
   }
   void Skipped(const CIPPort &addr) {
     CRITICAL_BLOCK(cs)

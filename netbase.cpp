@@ -224,7 +224,7 @@ bool CIPPort::ConnectSocket(SOCKET& hSocketRet, int nTimeout) const
             }
             if (nRet == SOCKET_ERROR)
             {
-                printf("select() for connection failed: %i\n",WSAGetLastError());
+                printf("select() for connection failed: %s\n",strerror(WSAGetLastError()));
                 closesocket(hSocket);
                 return false;
             }
@@ -235,7 +235,7 @@ bool CIPPort::ConnectSocket(SOCKET& hSocketRet, int nTimeout) const
             if (getsockopt(hSocket, SOL_SOCKET, SO_ERROR, &nRet, &nRetSize) == SOCKET_ERROR)
 #endif
             {
-                printf("getsockopt() for connection failed: %i\n",WSAGetLastError());
+                printf("getsockopt() for connection failed: %s\n",strerror(WSAGetLastError()));
                 closesocket(hSocket);
                 return false;
             }
