@@ -100,15 +100,19 @@ public:
     READWRITE(ip);
     READWRITE(services);
     READWRITE(lastTry);
-    READWRITE(ourLastTry);
-    READWRITE(ignoreTill);
-    READWRITE(stat2H);
-    READWRITE(stat8H);
-    READWRITE(stat1D);
-    READWRITE(stat1W);
-    READWRITE(total);
-    READWRITE(success);
-    READWRITE(clientVersion);
+    unsigned char tried = ourLastTry != 0;
+    READWRITE(tried);
+    if (tried) {
+      READWRITE(ourLastTry);
+      READWRITE(ignoreTill);
+      READWRITE(stat2H);
+      READWRITE(stat8H);
+      READWRITE(stat1D);
+      READWRITE(stat1W);
+      READWRITE(total);
+      READWRITE(success);
+      READWRITE(clientVersion);
+    }
   )
 };
 
