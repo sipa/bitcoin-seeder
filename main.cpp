@@ -3,7 +3,7 @@
 #include "bitcoin.h"
 #include "db.h"
 
-#define NTHREADS 16
+#define NTHREADS 32
 
 using namespace std;
 
@@ -15,7 +15,6 @@ CAddrDb db;
 
 extern "C" void* ThreadCrawler(void* data) {
   do {
-    db.Stats();
     CIPPort ip;
     int wait = 5;
     if (!db.Get(ip, wait)) {
@@ -57,16 +56,18 @@ extern "C" int GetIPList(struct in_addr *addr, int max, int ipv4only) {
   return n;
 }
 
+static dns_opt_t dns_opt;
+
 extern "C" void* ThreadDNS(void*) {
-  dns_opt_t opt;
-  opt.host = "seed.bitcoin.sipa.be";
-  opt.ns = "vps.sipa.be";
-  opt.mbox = "sipa.ulyssis.org";
-  opt.datattl = 60;
-  opt.nsttl = 40000;
-  opt.cb = GetIPList;
-  opt.port = 53;
-  dnsserver(&opt);
+  dns_opt.host = "seed.bitcoin.sipa.be";
+  dns_opt.ns = "vps.sipa.be";
+  dns_opt.mbox = "sipa.ulyssis.org";
+  dns_opt.datattl = 60;
+  dns_opt.nsttl = 40000;
+  dns_opt.cb = GetIPList;
+  dns_opt.port = 53;
+  dns_opt.nRequests = 0;
+  dnsserver(&dns_opt);
 }
 
 extern "C" void* ThreadDumper(void*) {
@@ -82,24 +83,45 @@ extern "C" void* ThreadDumper(void*) {
   } while(1);
 }
 
+extern "C" void* ThreadStats(void*) {
+  do {
+    CAddrDbStats stats;
+    db.GetStats(stats);
+    printf("*** %i available (%i tracked, %i new, %i active), %i banned; %i good; %llu DNS requests\n", stats.nAvail, stats.nTracked, stats.nNew, stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned, stats.nGood, (unsigned long long)dns_opt.nRequests);
+    Sleep(10000);
+  } while(1);
+}
+
+static const string seeds[] = {"dnsseed.bluematt.me", "bitseed.xf2.org", "dnsseed.bitcoin.dashjr.org", "seed.bitcoin.sipa.be"};
+
+extern "C" void* ThreadSeeder(void*) {
+  do {
+    for (int i=0; i<sizeof(seeds)/sizeof(seeds[0]); i++) {
+      vector<CIP> ips;
+      LookupHost(seeds[i].c_str(), ips);
+      for (vector<CIP>::iterator it = ips.begin(); it != ips.end(); it++) {
+        db.Add(CIPPort(*it, 8333), true);
+      }
+    }
+    Sleep(1800000);
+  } while(1);
+}
+
 int main(void) {
   FILE *f = fopen("dnsseed.dat","r");
   if (f) {
     CAutoFile cf(f);
     cf >> db;
   }
-  vector<CIP> ips;
-  LookupHost("dnsseed.bluematt.me", ips);
-  for (vector<CIP>::iterator it = ips.begin(); it != ips.end(); it++) {
-    db.Add(CIPPort(*it, 8333));
-  }
-  pthread_t thread[NTHREADS+2];
+  pthread_t thread[NTHREADS+4];
   for (int i=0; i<NTHREADS; i++) {
     pthread_create(&thread[i], NULL, ThreadCrawler, NULL);
   }
-  pthread_create(&thread[NTHREADS], NULL, ThreadDumper, NULL);
-  pthread_create(&thread[NTHREADS+1], NULL, ThreadDNS, NULL);
-  for (int i=0; i<NTHREADS+2; i++) {
+  pthread_create(&thread[NTHREADS+0], NULL, ThreadSeeder, NULL);
+  pthread_create(&thread[NTHREADS+1], NULL, ThreadDumper, NULL);
+  pthread_create(&thread[NTHREADS+2], NULL, ThreadDNS, NULL);
+  pthread_create(&thread[NTHREADS+3], NULL, ThreadStats, NULL);
+  for (int i=0; i<NTHREADS+4; i++) {
     void* res;
     pthread_join(thread[i], &res);
   }

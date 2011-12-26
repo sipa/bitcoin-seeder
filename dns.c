@@ -348,7 +348,7 @@ int dnsserver(dns_opt_t *opt) {
   do {
     ssize_t insize = recvfrom(s, inbuf, BUFLEN, 0, (struct sockaddr*)&si_other, &slen);
     unsigned char *addr = (unsigned char*)&si_other.sin_addr.s_addr;
-    printf("DNS: Request from %i.%i.%i.%i:%i of %i bytes\n", addr[0], addr[1], addr[2], addr[3], ntohs(si_other.sin_port), (int)insize);
+    printf("DNS: Request %llu from %i.%i.%i.%i:%i of %i bytes\n", (unsigned long long)(++opt->nRequests), addr[0], addr[1], addr[2], addr[3], ntohs(si_other.sin_port), (int)insize);
     if (insize > 0) {
       ssize_t ret = dnshandle(opt, inbuf, insize, outbuf);
       if (ret > 0)

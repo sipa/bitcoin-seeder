@@ -68,10 +68,10 @@ public:
 
     if (total <= 3 && success * 2 >= total) return true;
 
-    if (stat2H.reliability > 0.7 && stat2H.count > 3) return true;
-    if (stat8H.reliability > 0.6 && stat8H.count > 6) return true;
-    if (stat1D.reliability > 0.5 && stat1D.count > 12) return true;
-    if (stat1W.reliability > 0.4 && stat1W.count > 24) return true;
+    if (stat2H.reliability > 0.7 && stat2H.count > 1) return true;
+    if (stat8H.reliability > 0.6 && stat8H.count > 2) return true;
+    if (stat1D.reliability > 0.5 && stat1D.count > 4) return true;
+    if (stat1W.reliability > 0.4 && stat1W.count > 8) return true;
     
     return false;
   }
@@ -116,6 +116,15 @@ public:
   )
 };
 
+class CAddrDbStats {
+public:
+  int nBanned;
+  int nAvail;
+  int nTracked;
+  int nNew;
+  int nGood;
+};
+
 //             seen nodes
 //            /          \
 // (a) banned nodes       available nodes--------------
@@ -138,7 +147,7 @@ private:
   
 protected:
   // internal routines that assume proper locks are acquired
-  void Add_(const CAddress &addr);        // add an address
+  void Add_(const CAddress &addr, bool force);   // add an address
   bool Get_(CIPPort &ip, int& wait);      // get an IP to test (must call Good_, Bad_, or Skipped_ on result afterwards)
   void Good_(const CIPPort &ip, int clientV); // mark an IP as good (must have been returned by Get_)
   void Bad_(const CIPPort &ip, int ban);  // mark an IP as bad (and optionally ban it) (must have been returned by Get_)
@@ -148,6 +157,16 @@ protected:
 
 public:
 
+  void GetStats(CAddrDbStats &stats) {
+    SHARED_CRITICAL_BLOCK(cs) {
+      stats.nBanned = banned.size();
+      stats.nAvail = idToInfo.size();
+      stats.nTracked = ourId.size();
+      stats.nGood = goodId.size();
+      stats.nNew = unkId.size();
+    }
+  }
+  
   // serialization code
   // format:
   //   nVersion (0 for now)
@@ -197,30 +216,15 @@ public:
       READWRITE(banned);
     }
   });)
-  
-  // print statistics
-  void Stats() {
-    SHARED_CRITICAL_BLOCK(cs) {
-      if (nDirty > 50) {
-        printf("**** %i available (%i tracked, %i new, %i active), %i banned; %i good\n", 
-               (int)idToInfo.size(),
-               (int)ourId.size(),
-               (int)unkId.size(),
-               (int)idToInfo.size() - (int)ourId.size() - (int)unkId.size(),
-               (int)banned.size(),
-               (int)goodId.size());
-        nDirty = 0; // hopefully atomic
-      }
-    }
-  }
-  void Add(const CAddress &addr) {
+
+  void Add(const CAddress &addr, bool fForce = false) {
     CRITICAL_BLOCK(cs)
-      Add_(addr);
+      Add_(addr, fForce);
   }
-  void Add(const std::vector<CAddress> &vAddr) {
+  void Add(const std::vector<CAddress> &vAddr, bool fForce = false) {
     CRITICAL_BLOCK(cs)
       for (int i=0; i<vAddr.size(); i++)
-        Add_(vAddr[i]);
+        Add_(vAddr[i], fForce);
   }
   void Good(const CIPPort &addr, int clientVersion) {
     CRITICAL_BLOCK(cs)

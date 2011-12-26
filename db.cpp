@@ -138,13 +138,13 @@ void CAddrDb::Skipped_(const CIPPort &addr)
 }
 
 
-void CAddrDb::Add_(const CAddress &addr) {
-  if (!addr.IsRoutable())
+void CAddrDb::Add_(const CAddress &addr, bool force) {
+  if (!force && !addr.IsRoutable())
     return;
   CIPPort ipp(addr);
   if (banned.count(ipp)) {
     time_t bantime = banned[ipp];
-    if (bantime < time(NULL) && addr.nTime > bantime)
+    if (force || (bantime < time(NULL) && addr.nTime > bantime))
       banned.erase(ipp);
     else
       return;
@@ -156,6 +156,9 @@ void CAddrDb::Add_(const CAddress &addr) {
       ai.lastTry = addr.nTime;
       ai.services |= addr.nServices;
 //      printf("%s: updated\n", ToString(addr).c_str());
+    }
+    if (force) {
+      ai.ignoreTill = 0;
     }
     return;
   }
