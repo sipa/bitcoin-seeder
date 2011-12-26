@@ -67,6 +67,7 @@ bool CAddrDb::Get_(CIPPort &ip, int &wait) {
     }
     if (idToInfo[ret].ignoreTill && idToInfo[ret].ignoreTill < now) {
       ourId.push_back(ret);
+      idToInfo[ret].ourLastTry = now;
     } else {
       ip = idToInfo[ret].ip;
       break;

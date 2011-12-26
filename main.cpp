@@ -88,7 +88,7 @@ extern "C" void* ThreadStats(void*) {
     CAddrDbStats stats;
     db.GetStats(stats);
     printf("\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b");
-    printf("*** %i available (%i tracked (%is old), %i new, %i active), %i banned; %i good; %llu DNS requests", stats.nAvail, stats.nTracked, stats.nAge, stats.nNew, stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned, stats.nGood, (unsigned long long)dns_opt.nRequests);
+    printf("*** %i/%i available (%i tried in %is, %i new, %i active), %i banned; %llu DNS requests", stats.nGood, stats.nAvail, stats.nTracked, stats.nAge, stats.nNew, stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned, (unsigned long long)dns_opt.nRequests);
     Sleep(1000);
   } while(1);
 }
