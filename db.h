@@ -123,6 +123,7 @@ public:
   int nTracked;
   int nNew;
   int nGood;
+  int nAge;
 };
 
 //             seen nodes
@@ -164,6 +165,7 @@ public:
       stats.nTracked = ourId.size();
       stats.nGood = goodId.size();
       stats.nNew = unkId.size();
+      stats.nAge = time(NULL) - idToInfo[ourId[0]].ourLastTry;
     }
   }
   

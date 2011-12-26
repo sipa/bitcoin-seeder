@@ -178,7 +178,7 @@ bool CIPPort::ConnectSocket(SOCKET& hSocketRet, int nTimeout) const
     SOCKET hSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (hSocket == INVALID_SOCKET)
     {
-        printf("Failed to create socket: %s\n", strerror(errno));
+        // printf("Failed to create socket: %s\n", strerror(errno));
         return false;
     }
 
@@ -198,7 +198,7 @@ bool CIPPort::ConnectSocket(SOCKET& hSocketRet, int nTimeout) const
     if (fcntl(hSocket, F_SETFL, fFlags | O_NONBLOCK) == -1)
 #endif
     {
-        printf("Failed to set socket NONBLOCK\n");
+        // printf("Failed to set socket NONBLOCK\n");
         closesocket(hSocket);
     }
 
@@ -218,13 +218,13 @@ bool CIPPort::ConnectSocket(SOCKET& hSocketRet, int nTimeout) const
             int nRet = select(hSocket + 1, NULL, &fdset, NULL, &timeout);
             if (nRet == 0)
             {
-                printf("connection timeout\n");
+                // printf("connection timeout\n");
                 closesocket(hSocket);
                 return false;
             }
             if (nRet == SOCKET_ERROR)
             {
-                printf("select() for connection failed: %s\n",strerror(WSAGetLastError()));
+                // printf("select() for connection failed: %s\n",strerror(WSAGetLastError()));
                 closesocket(hSocket);
                 return false;
             }
@@ -235,13 +235,13 @@ bool CIPPort::ConnectSocket(SOCKET& hSocketRet, int nTimeout) const
             if (getsockopt(hSocket, SOL_SOCKET, SO_ERROR, &nRet, &nRetSize) == SOCKET_ERROR)
 #endif
             {
-                printf("getsockopt() for connection failed: %s\n",strerror(WSAGetLastError()));
+                // printf("getsockopt() for connection failed: %s\n",strerror(WSAGetLastError()));
                 closesocket(hSocket);
                 return false;
             }
             if (nRet != 0)
             {
-                printf("connect() failed after select(): %s\n",strerror(nRet));
+                // printf("connect() failed after select(): %s\n",strerror(nRet));
                 closesocket(hSocket);
                 return false;
             }
@@ -252,7 +252,7 @@ bool CIPPort::ConnectSocket(SOCKET& hSocketRet, int nTimeout) const
         else
 #endif
         {
-            printf("connect() failed: %i\n",WSAGetLastError());
+            // printf("connect() failed: %i\n",WSAGetLastError());
             closesocket(hSocket);
             return false;
         }
@@ -269,7 +269,7 @@ bool CIPPort::ConnectSocket(SOCKET& hSocketRet, int nTimeout) const
     if (fcntl(hSocket, F_SETFL, fFlags & !O_NONBLOCK) == SOCKET_ERROR)
 #endif
     {
-        printf("Failed to set socket blocking\n");
+        // printf("Failed to set socket blocking\n");
         closesocket(hSocket);
         return false;
     }
@@ -571,7 +571,7 @@ int64 CIP::GetHash() const
 
 void CIP::print() const
 {
-    printf("CIP(%s)\n", ToString().c_str());
+    // printf("CIP(%s)\n", ToString().c_str());
 }
 
 void CIPPort::Init()
@@ -699,7 +699,7 @@ std::string CIPPort::ToString() const
 
 void CIPPort::print() const
 {
-    printf("CIPPort(%s)\n", ToString().c_str());
+    // printf("CIPPort(%s)\n", ToString().c_str());
 }
 
 void CIPPort::SetPort(unsigned short portIn)

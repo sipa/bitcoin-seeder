@@ -65,7 +65,7 @@ extern "C" void* ThreadDNS(void*) {
   dns_opt.datattl = 60;
   dns_opt.nsttl = 40000;
   dns_opt.cb = GetIPList;
-  dns_opt.port = 53;
+  dns_opt.port = 5353;
   dns_opt.nRequests = 0;
   dnsserver(&dns_opt);
 }
@@ -87,8 +87,9 @@ extern "C" void* ThreadStats(void*) {
   do {
     CAddrDbStats stats;
     db.GetStats(stats);
-    printf("*** %i available (%i tracked, %i new, %i active), %i banned; %i good; %llu DNS requests\n", stats.nAvail, stats.nTracked, stats.nNew, stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned, stats.nGood, (unsigned long long)dns_opt.nRequests);
-    Sleep(10000);
+    printf("\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b");
+    printf("*** %i available (%i tracked (%is old), %i new, %i active), %i banned; %i good; %llu DNS requests", stats.nAvail, stats.nTracked, stats.nAge, stats.nNew, stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned, stats.nGood, (unsigned long long)dns_opt.nRequests);
+    Sleep(1000);
   } while(1);
 }
 
@@ -108,6 +109,7 @@ extern "C" void* ThreadSeeder(void*) {
 }
 
 int main(void) {
+  setbuf(stdout, NULL);
   FILE *f = fopen("dnsseed.dat","r");
   if (f) {
     CAutoFile cf(f);
