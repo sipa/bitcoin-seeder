@@ -42,6 +42,13 @@ public:
   friend class CAddrInfo;
 };
 
+class CAddrReport {
+public:
+  CIPPort ip;
+  int clientVersion;
+};
+
+
 class CAddrInfo {
 private:
   CIPPort ip;
@@ -59,7 +66,14 @@ private:
 public:
   CAddrInfo() : services(0), lastTry(0), ourLastTry(0), ignoreTill(0), clientVersion(0), total(0), success(0) {}
   
-  bool IsGood() {
+  CAddrReport GetReport() const {
+    CAddrReport ret;
+    ret.ip = ip;
+    ret.clientVersion = clientVersion;
+    return ret;
+  }
+  
+  bool IsGood() const {
     if (ip.GetPort() != 8333) return false;
     if (!(services & NODE_NETWORK)) return false;
     if (!ip.IsRoutable()) return false;
@@ -75,14 +89,14 @@ public:
     
     return false;
   }
-  int GetBanTime() {
+  int GetBanTime() const {
     if (IsGood()) return 0;
     if (clientVersion && clientVersion < 31900) { return 1000000; }
     if (stat1D.reliability < 0.01 && stat1D.count > 5) { return 500000; }
     if (stat1W.reliability - stat1W.weight + 1.0 < 0.10 && stat1W.count > 4) { return 240*3600; }
     return 0;
   }
-  int GetIgnoreTime() {
+  int GetIgnoreTime() const {
     if (IsGood()) return 0;
     if (stat2H.reliability - stat2H.weight + 1.0 < 0.2 && stat2H.count > 3) { return 3*3600; }
     if (stat8H.reliability - stat8H.weight + 1.0 < 0.2 && stat8H.count > 6) { return 12*3600; }
@@ -167,6 +181,19 @@ public:
       stats.nNew = unkId.size();
       stats.nAge = time(NULL) - idToInfo[ourId[0]].ourLastTry;
     }
+  }
+  
+  std::vector<CAddrReport> GetAll() {
+    std::vector<CAddrReport> ret;
+    SHARED_CRITICAL_BLOCK(cs) {
+      for (std::deque<int>::const_iterator it = ourId.begin(); it != ourId.end(); it++) {
+        const CAddrInfo &info = idToInfo[*it];
+        if (info.success > 0) {
+          ret.push_back(info.GetReport());
+        }
+      }
+    }
+    return ret;
   }
   
   // serialization code

@@ -114,6 +114,13 @@ int main(void) {
   if (f) {
     CAutoFile cf(f);
     cf >> db;
+    FILE *d = fopen("dnsseed.dump", "w");
+    vector<CAddrReport> v = db.GetAll();
+    for (vector<CAddrReport>::const_iterator it = v.begin(); it < v.end(); it++) {
+      CAddrReport rep = *it;
+      fprintf(d, "%s %i\n", rep.ip.ToString().c_str(), rep.clientVersion);
+    }
+    fclose(d);
   }
   pthread_t thread[NTHREADS+4];
   for (int i=0; i<NTHREADS; i++) {
