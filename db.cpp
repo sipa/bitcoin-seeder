@@ -119,7 +119,7 @@ void CAddrDb::Bad_(const CIPPort &addr, int ban)
     goodId.erase(id);
     idToInfo.erase(id);
   } else {
-    if (!info.IsGood() && goodId.count(id)==1) {
+    if (/*!info.IsGood() && */ goodId.count(id)==1) {
       goodId.erase(id);
 //      printf("%s: not good; %i good nodes left\n", ToString(addr).c_str(), (int)goodId.size());
     }

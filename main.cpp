@@ -1,11 +1,67 @@
 #include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <getopt.h>
 
 #include "bitcoin.h"
 #include "db.h"
 
-#define NTHREADS 32
+#define NTHREADS 24
 
 using namespace std;
+
+class CDnsSeedOpts {
+public:
+  int nThreads;
+  int nPort;
+  const char *mbox;
+  const char *ns;
+  const char *host;
+  
+  CDnsSeedOpts() : nThreads(24), nPort(53), mbox(NULL), ns(NULL), host(NULL) {}
+  
+  void ParseCommandLine(int argc, char **argv) {
+    while(1) {
+      static struct option long_options[] = {
+        {"host", required_argument, 0, 'h'},
+        {"ns",   required_argument, 0, 'n'},
+        {"mbox", required_argument, 0, 'm'},
+        {"threads", required_argument, 0, 't'},
+        {"port", required_argument, 0, 'p'},
+        {0, 0, 0, 0}
+      };
+      int option_index = 0;
+      int c = getopt_long(argc, argv, "h:n:m:t:p:", long_options, &option_index);
+      if (c == -1) break;
+      switch (c) {
+        case 'h': {
+          host = optarg;
+          break;
+        }
+        
+        case 'm': {
+          mbox = optarg;
+          break;
+        }
+        
+        case 'n': {
+          ns = optarg;
+          break;
+        }
+        
+        case 't': {
+          int n = strtol(optarg, NULL, 10);
+          if (n > 0 && n < 1000) nThreads = n;
+        }
+
+        case 'p': {
+          int p = strtol(optarg, NULL, 10);
+          if (p > 0 && p < 65536) nPort = p;
+        }
+      }
+    }
+  }
+};
 
 extern "C" {
 #include "dns.h"
@@ -58,14 +114,15 @@ extern "C" int GetIPList(struct in_addr *addr, int max, int ipv4only) {
 
 static dns_opt_t dns_opt;
 
-extern "C" void* ThreadDNS(void*) {
-  dns_opt.host = "seed.bitcoin.sipa.be";
-  dns_opt.ns = "vps.sipa.be";
-  dns_opt.mbox = "sipa.ulyssis.org";
+extern "C" void* ThreadDNS(void* arg) {
+  CDnsSeedOpts *opts = (CDnsSeedOpts*)arg;
+  dns_opt.host = opts->host;
+  dns_opt.ns = opts->ns;
+  dns_opt.mbox = opts->mbox;
   dns_opt.datattl = 60;
   dns_opt.nsttl = 40000;
   dns_opt.cb = GetIPList;
-  dns_opt.port = 5353;
+  dns_opt.port = opts->nPort;
   dns_opt.nRequests = 0;
   dnsserver(&dns_opt);
 }
@@ -108,31 +165,47 @@ extern "C" void* ThreadSeeder(void*) {
   } while(1);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
   setbuf(stdout, NULL);
+  CDnsSeedOpts opts;
+  opts.ParseCommandLine(argc, argv);
+  if (!opts.ns) {
+    fprintf(stderr, "No nameserver set. Please use -n.\n");
+    exit(1);
+  }
+  if (!opts.host) {
+    fprintf(stderr, "No hostname set. Please use -h.\n");
+  }
   FILE *f = fopen("dnsseed.dat","r");
   if (f) {
+    printf("Loading dnsseed.dat...");
     CAutoFile cf(f);
     cf >> db;
-    FILE *d = fopen("dnsseed.dump", "w");
-    vector<CAddrReport> v = db.GetAll();
-    for (vector<CAddrReport>::const_iterator it = v.begin(); it < v.end(); it++) {
-      CAddrReport rep = *it;
-      fprintf(d, "%s %i\n", rep.ip.ToString().c_str(), rep.clientVersion);
-    }
-    fclose(d);
+//    FILE *d = fopen("dnsseed.dump", "w");
+//    vector<CAddrReport> v = db.GetAll();
+//    for (vector<CAddrReport>::const_iterator it = v.begin(); it < v.end(); it++) {
+//      CAddrReport rep = *it;
+//      fprintf(d, "%s %i\n", rep.ip.ToString().c_str(), rep.clientVersion);
+//    }
+//     fclose(d);
+    printf("done\n");
   }
-  pthread_t thread[NTHREADS+4];
-  for (int i=0; i<NTHREADS; i++) {
-    pthread_create(&thread[i], NULL, ThreadCrawler, NULL);
+  pthread_t threadDns, threadSeed, threadDump, threadStats;
+  printf("Starting seeder...");
+  pthread_create(&threadSeed, NULL, ThreadSeeder, NULL);
+  printf("done\n");
+  printf("Starting %i crawler threads...", opts.nThreads);
+  for (int i=0; i<opts.nThreads; i++) {
+    pthread_t thread;
+    pthread_create(&thread, NULL, ThreadCrawler, NULL);
   }
-  pthread_create(&thread[NTHREADS+0], NULL, ThreadSeeder, NULL);
-  pthread_create(&thread[NTHREADS+1], NULL, ThreadDumper, NULL);
-  pthread_create(&thread[NTHREADS+2], NULL, ThreadDNS, NULL);
-  pthread_create(&thread[NTHREADS+3], NULL, ThreadStats, NULL);
-  for (int i=0; i<NTHREADS+4; i++) {
-    void* res;
-    pthread_join(thread[i], &res);
-  }
+  printf("done\n");
+  pthread_create(&threadDump, NULL, ThreadDumper, NULL);
+  printf("Starting DNS server for %s on %s (port %i)...", opts.host, opts.ns, opts.nPort);
+  pthread_create(&threadDns, NULL, ThreadDNS, &opts);
+  printf("done\n");
+  pthread_create(&threadStats, NULL, ThreadStats, NULL);
+  void* res;
+  pthread_join(threadDns, &res);
   return 0;
 }
