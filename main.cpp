@@ -21,6 +21,19 @@ public:
   CDnsSeedOpts() : nThreads(24), nPort(53), mbox(NULL), ns(NULL), host(NULL) {}
   
   void ParseCommandLine(int argc, char **argv) {
+    static const char *help = "Bitcoin-seeder\n"
+                              "Usage: %s -h <host> -n <ns> [-m <mbox>] [-t <threads>] [-p <port>]\n"
+                              "\n"
+                              "Options:\n"
+                              "-h <host>       Hostname of the DNS seed\n"
+                              "-n <ns>         Hostname of the nameserver\n"
+                              "-m <mbox>       E-Mail address reported in SOA records\n"
+                              "-t <threads>    Number of crawlers to run in parallel (default 24)\n"
+                              "-p <port>       UDP port to listen on (default 53)\n"
+                              "-?, --help      Show this text\n"
+                              "\n";
+    bool showHelp = false;
+
     while(1) {
       static struct option long_options[] = {
         {"host", required_argument, 0, 'h'},
@@ -28,6 +41,7 @@ public:
         {"mbox", required_argument, 0, 'm'},
         {"threads", required_argument, 0, 't'},
         {"port", required_argument, 0, 'p'},
+        {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
       };
       int option_index = 0;
@@ -52,14 +66,23 @@ public:
         case 't': {
           int n = strtol(optarg, NULL, 10);
           if (n > 0 && n < 1000) nThreads = n;
+          break;
         }
 
         case 'p': {
           int p = strtol(optarg, NULL, 10);
           if (p > 0 && p < 65536) nPort = p;
+          break;
+        }
+        
+        case '?': {
+          showHelp = true;
+          break;
         }
       }
     }
+    if (host == NULL || ns == NULL) showHelp = true;
+    if (showHelp) fprintf(stderr, help, argv[0]);
   }
 };
 
@@ -175,6 +198,7 @@ int main(int argc, char **argv) {
   }
   if (!opts.host) {
     fprintf(stderr, "No hostname set. Please use -h.\n");
+    exit(1);
   }
   FILE *f = fopen("dnsseed.dat","r");
   if (f) {
