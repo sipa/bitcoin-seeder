@@ -259,16 +259,21 @@ public:
 };
 
 bool TestNode(const CIPPort &cip, int &ban, int &clientV, vector<CAddress>& vAddr) {
-  CNode node(cip, vAddr);
-  bool ret = node.Run();
-  if (!ret) {
-    ban = node.GetBan();
-  } else {
-    ban = 0;
-  }
-  clientV = node.GetClientVersion();
+  try {
+    CNode node(cip, vAddr);
+    bool ret = node.Run();
+    if (!ret) {
+      ban = node.GetBan();
+    } else {
+      ban = 0;
+    }
+    clientV = node.GetClientVersion();
 //  printf("%s: %s!!!\n", cip.ToString().c_str(), ret ? "GOOD" : "BAD");
-  return ret;
+    return ret;
+  } catch(std::ios_base::failure& e) {
+    ban = 0;
+    return false;
+  }
 }
 
 /*
