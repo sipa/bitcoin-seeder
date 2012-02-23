@@ -81,7 +81,7 @@ class CNode {
   }
  
   void GotVersion() {
-    // printf("%s: version %i\n", ToString(you).c_str(), nVersion);
+    // printf("\n%s: version %i\n", ToString(you).c_str(), nVersion);
     BeginMessage("getaddr");
     EndMessage();
     doneAfter = time(NULL) + 10;
@@ -256,9 +256,13 @@ public:
   int GetClientVersion() {
     return nVersion;
   }
+  
+  std::string GetClientSubVersion() {
+    return strSubVer;
+  }
 };
 
-bool TestNode(const CIPPort &cip, int &ban, int &clientV, vector<CAddress>& vAddr) {
+bool TestNode(const CIPPort &cip, int &ban, int &clientV, std::string &clientSV, vector<CAddress>& vAddr) {
   try {
     CNode node(cip, vAddr);
     bool ret = node.Run();
@@ -268,6 +272,7 @@ bool TestNode(const CIPPort &cip, int &ban, int &clientV, vector<CAddress>& vAdd
       ban = 0;
     }
     clientV = node.GetClientVersion();
+    clientSV = node.GetClientSubVersion();
 //  printf("%s: %s!!!\n", cip.ToString().c_str(), ret ? "GOOD" : "BAD");
     return ret;
   } catch(std::ios_base::failure& e) {

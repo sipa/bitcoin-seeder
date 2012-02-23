@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -105,10 +107,11 @@ extern "C" void* ThreadCrawler(void* data) {
     int ban = 0;
     vector<CAddress> addr;
     int clientV = 0;
-    bool ret = TestNode(ip,ban,clientV,addr);
+    std::string clientSV;
+    bool ret = TestNode(ip,ban,clientV,clientSV,addr);
     db.Add(addr);
     if (ret) {
-      db.Good(ip, clientV);
+      db.Good(ip, clientV, clientSV);
     } else {
       db.Bad(ip, ban);
     }
@@ -150,6 +153,18 @@ extern "C" void* ThreadDNS(void* arg) {
   dnsserver(&dns_opt);
 }
 
+int StatCompare(const CAddrReport& a, const CAddrReport& b) {
+  if (a.uptime[4] == b.uptime[4]) {
+    if (a.uptime[3] == b.uptime[3]) {
+      return a.clientVersion > b.clientVersion;
+    } else {
+      return a.uptime[3] > b.uptime[3];
+    }
+  } else {
+    return a.uptime[4] > b.uptime[4];
+  }
+}
+
 extern "C" void* ThreadDumper(void*) {
   do {
     Sleep(100000);
@@ -159,16 +174,28 @@ extern "C" void* ThreadDumper(void*) {
         CAutoFile cf(f);
         cf << db;
       }
+      FILE *d = fopen("dnsseed.dump", "w");
+      vector<CAddrReport> v = db.GetAll();
+      sort(v.begin(), v.end(), StatCompare);
+      for (vector<CAddrReport>::const_iterator it = v.begin(); it < v.end(); it++) {
+        CAddrReport rep = *it;
+        fprintf(d, "%s\t%.2f%%\t%.2f%%\t%.2f%%\t%.2f%%\t%.2f%%\t%i \"%s\"\n", rep.ip.ToString().c_str(), 100.0*rep.uptime[0], 100.0*rep.uptime[1], 100.0*rep.uptime[2], 100.0*rep.uptime[3], 100.0*rep.uptime[4], rep.clientVersion, rep.clientSubVersion.c_str());
+      }
+      fclose(d);
     }
   } while(1);
 }
 
 extern "C" void* ThreadStats(void*) {
   do {
+    char c[256];
+    time_t tim = time(NULL);
+    struct tm *tmp = localtime(&tim);
+    strftime(c, 256, "[%y-%m-%d %H:%M:%S]", tmp);
     CAddrDbStats stats;
     db.GetStats(stats);
     printf("\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b");
-    printf("*** %i/%i available (%i tried in %is, %i new, %i active), %i banned; %llu DNS requests", stats.nGood, stats.nAvail, stats.nTracked, stats.nAge, stats.nNew, stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned, (unsigned long long)dns_opt.nRequests);
+    printf("%s %i/%i available (%i tried in %is, %i new, %i active), %i banned; %llu DNS requests", c, stats.nGood, stats.nAvail, stats.nTracked, stats.nAge, stats.nNew, stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned, (unsigned long long)dns_opt.nRequests);
     Sleep(1000);
   } while(1);
 }
@@ -205,13 +232,7 @@ int main(int argc, char **argv) {
     printf("Loading dnsseed.dat...");
     CAutoFile cf(f);
     cf >> db;
-//    FILE *d = fopen("dnsseed.dump", "w");
-//    vector<CAddrReport> v = db.GetAll();
-//    for (vector<CAddrReport>::const_iterator it = v.begin(); it < v.end(); it++) {
-//      CAddrReport rep = *it;
-//      fprintf(d, "%s %i\n", rep.ip.ToString().c_str(), rep.clientVersion);
-//    }
-//     fclose(d);
+//    db.banned.clear();
     printf("done\n");
   }
   pthread_t threadDns, threadSeed, threadDump, threadStats;

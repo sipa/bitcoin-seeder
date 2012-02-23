@@ -16,6 +16,7 @@ void CAddrInfo::Update(bool good) {
   stat8H.Update(good, age, 3600*8);
   stat1D.Update(good, age, 3600*24);
   stat1W.Update(good, age, 3600*24*7);
+  stat1M.Update(good, age, 3600*24*30);
   int ign = GetIgnoreTime();
   if (ign && (ignoreTill==0 || ignoreTill < ign+now)) ignoreTill = ign+now;
 //  printf("%s: got %s result: success=%i/%i; 2H:%.2f%%-%.2f%%(%.2f) 8H:%.2f%%-%.2f%%(%.2f) 1D:%.2f%%-%.2f%%(%.2f) 1W:%.2f%%-%.2f%%(%.2f) \n", ToString(ip).c_str(), good ? "good" : "bad", success, total, 
@@ -83,13 +84,14 @@ int CAddrDb::Lookup_(const CIPPort &ip) {
   return -1;
 }
 
-void CAddrDb::Good_(const CIPPort &addr, int clientV) {
+void CAddrDb::Good_(const CIPPort &addr, int clientV, std::string clientSV) {
   int id = Lookup_(addr);
   if (id == -1) return;
   unkId.erase(id);
   banned.erase(addr);
   CAddrInfo &info = idToInfo[id];
   info.clientVersion = clientV;
+  info.clientSubVersion = clientSV;
   info.Update(true);
   if (info.IsGood() && goodId.count(id)==0) {
     goodId.insert(id);

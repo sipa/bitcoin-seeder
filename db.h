@@ -46,6 +46,8 @@ class CAddrReport {
 public:
   CIPPort ip;
   int clientVersion;
+  double uptime[5];
+  std::string clientSubVersion;
 };
 
 
@@ -60,9 +62,11 @@ private:
   CAddrStat stat8H;
   CAddrStat stat1D;
   CAddrStat stat1W;
+  CAddrStat stat1M;
   int clientVersion;
   int total;
   int success;
+  std::string clientSubVersion;
 public:
   CAddrInfo() : services(0), lastTry(0), ourLastTry(0), ignoreTill(0), clientVersion(0), total(0), success(0) {}
   
@@ -70,6 +74,12 @@ public:
     CAddrReport ret;
     ret.ip = ip;
     ret.clientVersion = clientVersion;
+    ret.clientSubVersion = clientSubVersion;
+    ret.uptime[0] = stat2H.reliability;
+    ret.uptime[1] = stat8H.reliability;
+    ret.uptime[2] = stat1D.reliability;
+    ret.uptime[3] = stat1W.reliability;
+    ret.uptime[4] = stat1M.reliability;
     return ret;
   }
   
@@ -109,7 +119,7 @@ public:
   friend class CAddrDb;
   
   IMPLEMENT_SERIALIZE (
-    unsigned char version = 0;
+    unsigned char version = 2;
     READWRITE(version);
     READWRITE(ip);
     READWRITE(services);
@@ -123,9 +133,16 @@ public:
       READWRITE(stat8H);
       READWRITE(stat1D);
       READWRITE(stat1W);
+      if (version >= 1)
+          READWRITE(stat1M);
+      else
+          if (!fWrite)
+              *((CAddrStat*)(&stat1M)) = stat1W;
       READWRITE(total);
       READWRITE(success);
       READWRITE(clientVersion);
+      if (version >= 2)
+          READWRITE(clientSubVersion);
     }
   )
 };
@@ -157,20 +174,20 @@ private:
   std::deque<int> ourId; // sequence of tried nodes, in order we have tried connecting to them (c,d)
   std::set<int> unkId; // set of nodes not yet tried (b)
   std::set<int> goodId; // set of good nodes  (d, good e)
-  std::map<CIPPort, time_t> banned; // nodes that are banned, with their unban time (a)
   int nDirty;
   
 protected:
   // internal routines that assume proper locks are acquired
   void Add_(const CAddress &addr, bool force);   // add an address
   bool Get_(CIPPort &ip, int& wait);      // get an IP to test (must call Good_, Bad_, or Skipped_ on result afterwards)
-  void Good_(const CIPPort &ip, int clientV); // mark an IP as good (must have been returned by Get_)
+  void Good_(const CIPPort &ip, int clientV, std::string clientSV); // mark an IP as good (must have been returned by Get_)
   void Bad_(const CIPPort &ip, int ban);  // mark an IP as bad (and optionally ban it) (must have been returned by Get_)
   void Skipped_(const CIPPort &ip);       // mark an IP as skipped (must have been returned by Get_)
   int Lookup_(const CIPPort &ip);         // look up id of an IP
   void GetIPs_(std::set<CIP>& ips, int max, bool fOnlyIPv4); // get a random set of IPs (shared lock only)
 
 public:
+  std::map<CIPPort, time_t> banned; // nodes that are banned, with their unban time (a)
 
   void GetStats(CAddrDbStats &stats) {
     SHARED_CRITICAL_BLOCK(cs) {
@@ -255,9 +272,9 @@ public:
       for (int i=0; i<vAddr.size(); i++)
         Add_(vAddr[i], fForce);
   }
-  void Good(const CIPPort &addr, int clientVersion) {
+  void Good(const CIPPort &addr, int clientVersion, std::string clientSubVersion) {
     CRITICAL_BLOCK(cs)
-      Good_(addr, clientVersion);
+      Good_(addr, clientVersion, clientSubVersion);
   }
   void Skipped(const CIPPort &addr) {
     CRITICAL_BLOCK(cs)
