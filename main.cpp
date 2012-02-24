@@ -220,11 +220,12 @@ int main(int argc, char **argv) {
   setbuf(stdout, NULL);
   CDnsSeedOpts opts;
   opts.ParseCommandLine(argc, argv);
+  bool fDNS = true;
   if (!opts.ns) {
-    fprintf(stderr, "No nameserver set. Please use -n.\n");
-    exit(1);
+    printf("No nameserver set. Not starting DNS server.\n");
+    fDNS = false;
   }
-  if (!opts.host) {
+  if (fDNS && !opts.host) {
     fprintf(stderr, "No hostname set. Please use -h.\n");
     exit(1);
   }
@@ -247,11 +248,13 @@ int main(int argc, char **argv) {
   }
   printf("done\n");
   pthread_create(&threadDump, NULL, ThreadDumper, NULL);
-  printf("Starting DNS server for %s on %s (port %i)...", opts.host, opts.ns, opts.nPort);
-  pthread_create(&threadDns, NULL, ThreadDNS, &opts);
-  printf("done\n");
+  if (fDNS) {
+    printf("Starting DNS server for %s on %s (port %i)...", opts.host, opts.ns, opts.nPort);
+    pthread_create(&threadDns, NULL, ThreadDNS, &opts);
+    printf("done\n");
+  }
   pthread_create(&threadStats, NULL, ThreadStats, NULL);
   void* res;
-  pthread_join(threadDns, &res);
+  pthread_join(threadDump, &res);
   return 0;
 }
