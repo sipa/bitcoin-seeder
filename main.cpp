@@ -83,7 +83,7 @@ public:
         }
       }
     }
-    if (host == NULL || ns == NULL) showHelp = true;
+    if (host != NULL && ns == NULL) showHelp = true;
     if (showHelp) fprintf(stderr, help, argv[0]);
   }
 };
