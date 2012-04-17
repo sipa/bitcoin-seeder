@@ -5,13 +5,18 @@ use strict;
 sub loadFile {
   my ($file) = @_;
   my %ret;
+  my $min = 100000000;
   open FILE,$file;
   while (<FILE>) {
     my ($addr,$p2h,$p8h,$p1d,$p1w,$p1m) = split(/\s+/,$_);
     if ($p1m =~ /\A([1-9.]+)%\Z/) {
       my $x = log($1*0.01)/log(0.5);
+      $min=$x if ($x < $min);
       $ret{$addr} = $x;
     }
+  }
+  for my $k (keys %ret) {
+    $ret{$k} -= $min;
   }
   close FILE;
   return \%ret;
