@@ -118,24 +118,42 @@ extern "C" void* ThreadCrawler(void* data) {
   } while(1);
 }
 
-extern "C" int GetIPList(struct in_addr *addr, int max, int ipv4only) {
-  set<CIP> ips;
-  db.GetIPs(ips, max, ipv4only);
-  int n = 0;
-  for (set<CIP>::iterator it = ips.begin(); it != ips.end(); it++) {
-    if ((*it).GetInAddr(&addr[n]))
-      n++;
-  }
-  // permute list
-  for (int i=0; i<n; i++) {
-    int k = i + (rand() % (n-i));
-    if (i != k) {
-      struct in_addr sw = addr[i];
-      addr[i] = addr[k];
-      addr[k] = sw;
+static vector<struct in_addr> cache;
+static time_t cacheTime;
+static unsigned int cacheHits = 1000000000;
+static uint64_t dbQueries = 0;
+
+void static cacheRefresh(int ipv4only) {
+  time_t now = time(NULL);
+  cacheHits++;
+  if (cacheHits > (cache.size()*cache.size()/400) || (cacheHits*cacheHits > cache.size() / 20 && (now - cacheTime > 5))) {
+    set<CIP> ips;
+    db.GetIPs(ips, 1000, ipv4only);
+    dbQueries++;
+    cache.clear();
+    cache.reserve(ips.size());
+    for (set<CIP>::iterator it = ips.begin(); it != ips.end(); it++) {
+      struct in_addr addr;
+      if ((*it).GetInAddr(&addr)) {
+        cache.push_back(addr);
+      }
     }
+    cacheHits = 0;
+    cacheTime = now;
   }
-  return n;
+}
+
+extern "C" int GetIPList(struct in_addr *addr, int max, int ipv4only) {
+  cacheRefresh(ipv4only);
+  if (max > cache.size())
+    max = cache.size();
+  for (int i=0; i<max; i++) {
+    int j = i + (rand() % (cache.size() - i));
+    addr[i] = cache[j];
+    cache[j] = cache[i];
+    cache[i] = addr[i];
+  }
+  return max;
 }
 
 static dns_opt_t dns_opt;
@@ -178,11 +196,20 @@ extern "C" void* ThreadDumper(void*) {
       vector<CAddrReport> v = db.GetAll();
       sort(v.begin(), v.end(), StatCompare);
       fprintf(d, "# address        \t%%(2h)\t%%(8h)\t%%(1d)\t%%(7d)\t%%(30d)\tversion\n");
+      double stat[5]={0,0,0,0,0};
       for (vector<CAddrReport>::const_iterator it = v.begin(); it < v.end(); it++) {
         CAddrReport rep = *it;
         fprintf(d, "%s\t%.2f%%\t%.2f%%\t%.2f%%\t%.2f%%\t%.2f%%\t%i \"%s\"\n", rep.ip.ToString().c_str(), 100.0*rep.uptime[0], 100.0*rep.uptime[1], 100.0*rep.uptime[2], 100.0*rep.uptime[3], 100.0*rep.uptime[4], rep.clientVersion, rep.clientSubVersion.c_str());
+        stat[0] += rep.uptime[0];
+        stat[1] += rep.uptime[1];
+        stat[2] += rep.uptime[2];
+        stat[3] += rep.uptime[3];
+        stat[4] += rep.uptime[4];
       }
       fclose(d);
+      FILE *ff = fopen("dnsstats.log", "a");
+      fprintf(ff, "%llu %g %g %g %g %g\n", (unsigned long long)(time(NULL)), stat[0], stat[1], stat[2], stat[3], stat[4]);
+      fclose(ff);
     }
   } while(1);
 }
@@ -196,7 +223,7 @@ extern "C" void* ThreadStats(void*) {
     CAddrDbStats stats;
     db.GetStats(stats);
     printf("\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b");
-    printf("%s %i/%i available (%i tried in %is, %i new, %i active), %i banned; %llu DNS requests", c, stats.nGood, stats.nAvail, stats.nTracked, stats.nAge, stats.nNew, stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned, (unsigned long long)dns_opt.nRequests);
+    printf("%s %i/%i available (%i tried in %is, %i new, %i active), %i banned; %llu DNS requests, %llu db reads", c, stats.nGood, stats.nAvail, stats.nTracked, stats.nAge, stats.nNew, stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned, (unsigned long long)dns_opt.nRequests, (unsigned long long)dbQueries);
     Sleep(1000);
   } while(1);
 }

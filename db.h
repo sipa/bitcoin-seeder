@@ -103,14 +103,14 @@ public:
     if (IsGood()) return 0;
     if (clientVersion && clientVersion < 31900) { return 1000000; }
     if (stat1D.reliability < 0.01 && stat1D.count > 5) { return 500000; }
-    if (stat1W.reliability - stat1W.weight + 1.0 < 0.10 && stat1W.count > 4) { return 240*3600; }
+    if (stat1W.reliability - stat1W.weight + 1.0 < 0.10 && stat1W.count > 4) { return 10*24*3600; }
     return 0;
   }
   int GetIgnoreTime() const {
     if (IsGood()) return 0;
-    if (stat2H.reliability - stat2H.weight + 1.0 < 0.2 && stat2H.count > 3) { return 3*3600; }
-    if (stat8H.reliability - stat8H.weight + 1.0 < 0.2 && stat8H.count > 6) { return 12*3600; }
-    if (stat1D.reliability - stat1D.weight + 1.0 < 0.2 && stat1D.count > 9) { return 36*3600; }
+    if (stat2H.reliability - stat2H.weight + 1.0 < 0.2 && stat2H.count > 3) { return 1*3600; }
+    if (stat8H.reliability - stat8H.weight + 1.0 < 0.2 && stat8H.count > 6) { return 2*3600; }
+    if (stat1D.reliability - stat1D.weight + 1.0 < 0.2 && stat1D.count > 9) { return 3*3600; }
     return 0;
   }
   
