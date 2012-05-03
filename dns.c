@@ -296,7 +296,7 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   // A records
   if ((typ == TYPE_A || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY)) {
     struct in_addr addr[32];
-    int naddr = opt->cb(addr, 32, 1);
+    int naddr = opt->cb((void*)opt, addr, 32, 1);
     int n = 0;
     while (n < naddr) {
       int ret = write_record_a(&outpos, outend - auth_size, "", offset, CLASS_IN, opt->datattl, &addr[n]);
@@ -333,27 +333,39 @@ error:
   return 12;
 }
 
+static int listenSocket = -1;
+
 int dnsserver(dns_opt_t *opt) {
-  struct sockaddr_in si_me, si_other;
-  socklen_t s, slen=sizeof(si_other);
+  struct sockaddr_in si_other;
+  int senderSocket = -1;
+  senderSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (senderSocket == -1) 
+    return -3;
+
+  if (listenSocket == -1) {
+    struct sockaddr_in si_me;
+    if ((listenSocket=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP))==-1) {
+      listenSocket = -1;
+      return -1;
+    }
+    memset((char *) &si_me, 0, sizeof(si_me));
+    si_me.sin_family = AF_INET;
+    si_me.sin_port = htons(opt->port);
+    si_me.sin_addr.s_addr = INADDR_ANY;
+    if (bind(listenSocket, (struct sockaddr*)&si_me, sizeof(si_me))==-1)
+      return -2;
+  }
   unsigned char inbuf[BUFLEN], outbuf[BUFLEN];
-  if ((s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP))==-1)
-    return -1;
-  memset((char *) &si_me, 0, sizeof(si_me));
-  si_me.sin_family = AF_INET;
-  si_me.sin_port = htons(opt->port);
-  si_me.sin_addr.s_addr = INADDR_ANY;
-  if (bind(s, (struct sockaddr*)&si_me, sizeof(si_me))==-1)
-    return -2;
   do {
-    ssize_t insize = recvfrom(s, inbuf, BUFLEN, 0, (struct sockaddr*)&si_other, &slen);
+    socklen_t si_other_len = sizeof(si_other);
+    ssize_t insize = recvfrom(listenSocket, inbuf, BUFLEN, 0, (struct sockaddr*)&si_other, &si_other_len);
     unsigned char *addr = (unsigned char*)&si_other.sin_addr.s_addr;
 //    printf("DNS: Request %llu from %i.%i.%i.%i:%i of %i bytes\n", (unsigned long long)(opt->nRequests), addr[0], addr[1], addr[2], addr[3], ntohs(si_other.sin_port), (int)insize);
     opt->nRequests++;
     if (insize > 0) {
       ssize_t ret = dnshandle(opt, inbuf, insize, outbuf);
       if (ret > 0)
-        sendto(s, outbuf, ret, 0, (struct sockaddr*)&si_other, slen);
+        sendto(listenSocket, outbuf, ret, 0, (struct sockaddr*)&si_other, sizeof(si_other));
     }
   } while(1);
   return 0;

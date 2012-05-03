@@ -16,11 +16,12 @@ class CDnsSeedOpts {
 public:
   int nThreads;
   int nPort;
+  int nDnsThreads;
   const char *mbox;
   const char *ns;
   const char *host;
   
-  CDnsSeedOpts() : nThreads(24), nPort(53), mbox(NULL), ns(NULL), host(NULL) {}
+  CDnsSeedOpts() : nThreads(24), nDnsThreads(24), nPort(53), mbox(NULL), ns(NULL), host(NULL) {}
   
   void ParseCommandLine(int argc, char **argv) {
     static const char *help = "Bitcoin-seeder\n"
@@ -31,6 +32,7 @@ public:
                               "-n <ns>         Hostname of the nameserver\n"
                               "-m <mbox>       E-Mail address reported in SOA records\n"
                               "-t <threads>    Number of crawlers to run in parallel (default 24)\n"
+                              "-d <threads>    Number of DNS server threads (default 24)\n"
                               "-p <port>       UDP port to listen on (default 53)\n"
                               "-?, --help      Show this text\n"
                               "\n";
@@ -42,12 +44,13 @@ public:
         {"ns",   required_argument, 0, 'n'},
         {"mbox", required_argument, 0, 'm'},
         {"threads", required_argument, 0, 't'},
+        {"dnsthreads", required_argument, 0, 'd'},
         {"port", required_argument, 0, 'p'},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
       };
       int option_index = 0;
-      int c = getopt_long(argc, argv, "h:n:m:t:p:", long_options, &option_index);
+      int c = getopt_long(argc, argv, "h:n:m:t:p:d:", long_options, &option_index);
       if (c == -1) break;
       switch (c) {
         case 'h': {
@@ -68,6 +71,12 @@ public:
         case 't': {
           int n = strtol(optarg, NULL, 10);
           if (n > 0 && n < 1000) nThreads = n;
+          break;
+        }
+
+        case 'd': {
+          int n = strtol(optarg, NULL, 10);
+          if (n > 0 && n < 1000) nDnsThreads = n;
           break;
         }
 
@@ -118,57 +127,78 @@ extern "C" void* ThreadCrawler(void* data) {
   } while(1);
 }
 
-static vector<struct in_addr> cache;
-static time_t cacheTime;
-static unsigned int cacheHits = 1000000000;
-static uint64_t dbQueries = 0;
+extern "C" int GetIPList(void *thread, struct in_addr *addr, int max, int ipv4only);
 
-void static cacheRefresh(int ipv4only) {
-  time_t now = time(NULL);
-  cacheHits++;
-  if (cacheHits > (cache.size()*cache.size()/400) || (cacheHits*cacheHits > cache.size() / 20 && (now - cacheTime > 5))) {
-    set<CIP> ips;
-    db.GetIPs(ips, 1000, ipv4only);
-    dbQueries++;
-    cache.clear();
-    cache.reserve(ips.size());
-    for (set<CIP>::iterator it = ips.begin(); it != ips.end(); it++) {
-      struct in_addr addr;
-      if ((*it).GetInAddr(&addr)) {
-        cache.push_back(addr);
+class CDnsThread {
+public:
+  dns_opt_t dns_opt;
+  vector<struct in_addr> cache;
+  time_t cacheTime;
+  unsigned int cacheHits;
+  uint64_t dbQueries;
+
+  void cacheHit(int ipv4only, bool force = false) {
+    time_t now = time(NULL);
+    cacheHits++;
+    if (force || cacheHits > (cache.size()*cache.size()/400) || (cacheHits*cacheHits > cache.size() / 20 && (now - cacheTime > 5))) {
+      set<CIP> ips;
+      db.GetIPs(ips, 1000, ipv4only);
+      dbQueries++;
+      cache.clear();
+      cache.reserve(ips.size());
+      for (set<CIP>::iterator it = ips.begin(); it != ips.end(); it++) {
+        struct in_addr addr;
+        if ((*it).GetInAddr(&addr)) {
+          cache.push_back(addr);
+        }
       }
+      cacheHits = 0;
+      cacheTime = now;
     }
-    cacheHits = 0;
-    cacheTime = now;
   }
-}
 
-extern "C" int GetIPList(struct in_addr *addr, int max, int ipv4only) {
-  cacheRefresh(ipv4only);
-  if (max > cache.size())
-    max = cache.size();
+  CDnsThread(CDnsSeedOpts* opts) {
+    dns_opt.host = opts->host;
+    dns_opt.ns = opts->ns;
+    dns_opt.mbox = opts->mbox;
+    dns_opt.datattl = 60;
+    dns_opt.nsttl = 40000;
+    dns_opt.cb = GetIPList;
+    dns_opt.port = opts->nPort;
+    dns_opt.nRequests = 0;
+    cache.clear();
+    cache.reserve(1000);
+    cacheTime = 0;
+    cacheHits = 0;
+    dbQueries = 0;
+    cacheHit(true, true);
+  }
+
+  void run() {
+    dnsserver(&dns_opt);
+  }
+};
+
+extern "C" int GetIPList(void *data, struct in_addr *addr, int max, int ipv4only) {
+  CDnsThread *thread = (CDnsThread*)data;
+  thread->cacheHit(ipv4only);
+  unsigned int size = thread->cache.size();
+  if (max > size)
+    max = size;
   for (int i=0; i<max; i++) {
-    int j = i + (rand() % (cache.size() - i));
-    addr[i] = cache[j];
-    cache[j] = cache[i];
-    cache[i] = addr[i];
+    int j = i + (rand() % (size - i));
+    addr[i] = thread->cache[j];
+    thread->cache[j] = thread->cache[i];
+    thread->cache[i] = addr[i];
   }
   return max;
 }
 
-static dns_opt_t dns_opt;
+vector<CDnsThread*> dnsThread;
 
 extern "C" void* ThreadDNS(void* arg) {
-  CDnsSeedOpts *opts = (CDnsSeedOpts*)arg;
-  dns_opt.host = opts->host;
-  dns_opt.ns = opts->ns;
-  dns_opt.mbox = opts->mbox;
-  dns_opt.datattl = 60;
-  dns_opt.nsttl = 40000;
-  dns_opt.cb = GetIPList;
-  dns_opt.port = opts->nPort;
-  dns_opt.nRequests = 0;
-  dnsserver(&dns_opt);
+  CDnsThread *thread = (CDnsThread*)arg;
+  thread->run();
 }
 
 int StatCompare(const CAddrReport& a, const CAddrReport& b) {
@@ -223,7 +253,13 @@ extern "C" void* ThreadStats(void*) {
     CAddrDbStats stats;
     db.GetStats(stats);
     printf("\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b");
-    printf("%s %i/%i available (%i tried in %is, %i new, %i active), %i banned; %llu DNS requests, %llu db reads", c, stats.nGood, stats.nAvail, stats.nTracked, stats.nAge, stats.nNew, stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned, (unsigned long long)dns_opt.nRequests, (unsigned long long)dbQueries);
+    uint64_t requests = 0;
+    uint64_t queries = 0;
+    for (unsigned int i=0; i<dnsThread.size(); i++) {
+      requests += dnsThread[i]->dns_opt.nRequests;
+      queries += dnsThread[i]->dbQueries;
+    }
+    printf("%s %i/%i available (%i tried in %is, %i new, %i active), %i banned; %llu DNS requests, %llu db queries", c, stats.nGood, stats.nAvail, stats.nTracked, stats.nAge, stats.nNew, stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned, (unsigned long long)requests, (unsigned long long)queries);
     Sleep(1000);
   } while(1);
 }
@@ -276,8 +312,14 @@ int main(int argc, char **argv) {
   printf("done\n");
   pthread_create(&threadDump, NULL, ThreadDumper, NULL);
   if (fDNS) {
-    printf("Starting DNS server for %s on %s (port %i)...", opts.host, opts.ns, opts.nPort);
-    pthread_create(&threadDns, NULL, ThreadDNS, &opts);
+    printf("Starting %i DNS threads for %s on %s (port %i)...", opts.nDnsThreads, opts.host, opts.ns, opts.nPort);
+    dnsThread.clear();
+    for (int i=0; i<opts.nDnsThreads; i++) {
+      dnsThread.push_back(new CDnsThread(&opts));
+      pthread_create(&threadDns, NULL, ThreadDNS, dnsThread[i]);
+      printf(".");
+      Sleep(20);
+    }
     printf("done\n");
   }
   pthread_create(&threadStats, NULL, ThreadStats, NULL);

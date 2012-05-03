@@ -10,7 +10,7 @@ typedef struct {
   const char *host;
   const char *ns;
   const char *mbox;
-  int (*cb)(struct in_addr *addr, int max, int ipv4only);
+  int (*cb)(void *opt, struct in_addr *addr, int max, int ipv4only);
   // stats
   uint64_t nRequests;
 } dns_opt_t;
