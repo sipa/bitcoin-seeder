@@ -105,7 +105,7 @@ CAddrDb db;
 
 extern "C" void* ThreadCrawler(void* data) {
   do {
-    CIPPort ip;
+    CService ip;
     int wait = 5;
     if (!db.Get(ip, wait)) {
       wait *= 1000;
@@ -127,29 +127,50 @@ extern "C" void* ThreadCrawler(void* data) {
   } while(1);
 }
 
-extern "C" int GetIPList(void *thread, struct in_addr *addr, int max, int ipv4only);
+extern "C" int GetIPList(void *thread, addr_t *addr, int max, int ipv4, int ipv6);
 
 class CDnsThread {
 public:
   dns_opt_t dns_opt;
-  vector<struct in_addr> cache;
+  vector<addr_t> cache;
+  int nIPv4, nIPv6;
   time_t cacheTime;
   unsigned int cacheHits;
   uint64_t dbQueries;
 
-  void cacheHit(int ipv4only, bool force = false) {
+  void cacheHit(bool force = false) {
+    static bool nets[NET_MAX] = {};
+    if (!nets[NET_IPV4]) {
+        nets[NET_IPV4] = true;
+        nets[NET_IPV6] = true;
+    }
     time_t now = time(NULL);
     cacheHits++;
     if (force || cacheHits > (cache.size()*cache.size()/400) || (cacheHits*cacheHits > cache.size() / 20 && (now - cacheTime > 5))) {
-      set<CIP> ips;
-      db.GetIPs(ips, 1000, ipv4only);
+      set<CNetAddr> ips;
+      db.GetIPs(ips, 1000, nets);
       dbQueries++;
       cache.clear();
+      nIPv4 = 0;
+      nIPv6 = 0;
       cache.reserve(ips.size());
-      for (set<CIP>::iterator it = ips.begin(); it != ips.end(); it++) {
+      for (set<CNetAddr>::iterator it = ips.begin(); it != ips.end(); it++) {
         struct in_addr addr;
+        struct in6_addr addr6;
         if ((*it).GetInAddr(&addr)) {
-          cache.push_back(addr);
+          addr_t a;
+          a.v = 4;
+          memcpy(&a.data.v4, &addr, 4);
+          cache.push_back(a);
+          nIPv4++;
+#ifdef USE_IPV6
+        } else if ((*it).GetIn6Addr(&addr6)) {
+          addr_t a;
+          a.v = 6;
+          memcpy(&a.data.v6, &addr6, 16);
+          cache.push_back(a);
+          nIPv6++;
+#endif
         }
       }
       cacheHits = 0;
@@ -171,7 +192,9 @@ public:
     cacheTime = 0;
     cacheHits = 0;
     dbQueries = 0;
-    cacheHit(true, true);
+    nIPv4 = 0;
+    nIPv6 = 0;
+    cacheHit(true);
   }
 
   void run() {
@@ -179,14 +202,21 @@ public:
   }
 };
 
-extern "C" int GetIPList(void *data, struct in_addr *addr, int max, int ipv4only) {
+extern "C" int GetIPList(void *data, addr_t* addr, int max, int ipv4, int ipv6) {
   CDnsThread *thread = (CDnsThread*)data;
-  thread->cacheHit(ipv4only);
-  unsigned int size = thread->cache.size();
+  thread->cacheHit();
+  unsigned int size = (ipv4 ? thread->nIPv4 : 0) + (ipv6 ? thread->nIPv6 : 0);
   if (max > size)
     max = size;
-  for (int i=0; i<max; i++) {
+  int i=0;
+  while (i<max) {
     int j = i + (rand() % (size - i));
+    do {
+        bool ok = (ipv4 && thread->cache[j].v == 4) || 
+                  (ipv6 && thread->cache[j].v == 6);
+        if (ok) break;
+        j = i + ((j - i + 1) % (size - i));
+    } while(1);
     addr[i] = thread->cache[j];
     thread->cache[j] = thread->cache[i];
     thread->cache[i] = addr[i];
@@ -269,10 +299,10 @@ static const string seeds[] = {"dnsseed.bluematt.me", "bitseed.xf2.org", "dnssee
 extern "C" void* ThreadSeeder(void*) {
   do {
     for (int i=0; i<sizeof(seeds)/sizeof(seeds[0]); i++) {
-      vector<CIP> ips;
+      vector<CNetAddr> ips;
       LookupHost(seeds[i].c_str(), ips);
-      for (vector<CIP>::iterator it = ips.begin(); it != ips.end(); it++) {
-        db.Add(CIPPort(*it, 8333), true);
+      for (vector<CNetAddr>::iterator it = ips.begin(); it != ips.end(); it++) {
+        db.Add(CService(*it, 8333), true);
       }
     }
     Sleep(1800000);

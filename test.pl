@@ -17,8 +17,8 @@ sub go {
   
   my $sock = IO::Socket::INET->new(
     Proto    => 'udp',
-    PeerPort => 5353,
-    PeerAddr => "127.0.0.1",
+    PeerPort => 53,
+    PeerAddr => "vps.sipa.be",
   ) or die "Could not create socket: $!\n";
 
   while($run) {
@@ -52,7 +52,7 @@ sub go {
 
 my @threads;
 
-for my $i (0..3) {
+for my $i (0..500) {
   $threads[$i] = threads->create(\&go, $i);
 }
 

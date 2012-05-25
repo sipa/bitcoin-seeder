@@ -72,7 +72,7 @@ class CNode {
     int64 nTime = time(NULL);
     uint64 nLocalNonce = BITCOIN_SEED_NONCE;
     int64 nLocalServices = 0;
-    CAddress me(CIPPort("0.0.0.0"));
+    CAddress me(CService("0.0.0.0"));
     BeginMessage("version");
     int nBestHeight = REQUIRE_HEIGHT;
     string ver = "/bitcoin-seeder:0.01/";
@@ -132,8 +132,6 @@ class CNode {
         CAddress &addr = *it;
 //        printf("%s: got address %s\n", ToString(you).c_str(), addr.ToString().c_str(), (int)(vAddr->size()));
         it++;
-        if (!addr.IsIPv4())
-          continue;
         if (addr.nTime <= 100000000 || addr.nTime > now + 600)
           addr.nTime = now - 5 * 86400;
         vAddr->push_back(addr);
@@ -192,7 +190,7 @@ class CNode {
   }
   
 public:
-  CNode(const CIPPort& ip, vector<CAddress>& vAddrIn) : you(ip), nHeaderStart(-1), nMessageStart(-1), vAddr(&vAddrIn), ban(0), doneAfter(0), nVersion(0) {
+  CNode(const CService& ip, vector<CAddress>& vAddrIn) : you(ip), nHeaderStart(-1), nMessageStart(-1), vAddr(&vAddrIn), ban(0), doneAfter(0), nVersion(0) {
     vSend.SetType(SER_NETWORK);
     vSend.SetVersion(0);
     vRecv.SetType(SER_NETWORK);
@@ -204,7 +202,7 @@ public:
   }
   bool Run() {
     bool res = true;
-    if (!you.ConnectSocket(sock)) return false;
+    if (!ConnectSocket(you, sock)) return false;
     PushVersion();
     Send();
     int64 now;
@@ -262,7 +260,7 @@ public:
   }
 };
 
-bool TestNode(const CIPPort &cip, int &ban, int &clientV, std::string &clientSV, vector<CAddress>& vAddr) {
+bool TestNode(const CService &cip, int &ban, int &clientV, std::string &clientSV, vector<CAddress>& vAddr) {
   try {
     CNode node(cip, vAddr);
     bool ret = node.Run();
@@ -283,7 +281,7 @@ bool TestNode(const CIPPort &cip, int &ban, int &clientV, std::string &clientSV,
 
 /*
 int main(void) {
-  CIPPort ip("bitcoin.sipa.be", 8333, true);
+  CService ip("bitcoin.sipa.be", 8333, true);
   vector<CAddress> vAddr;
   vAddr.clear();
   int ban = 0;

@@ -26,7 +26,7 @@ void CAddrInfo::Update(bool good) {
 //  100.0 * stat1W.reliability, 100.0 * (stat1W.reliability + 1.0 - stat1W.weight), stat1W.count);
 }
 
-bool CAddrDb::Get_(CIPPort &ip, int &wait) {
+bool CAddrDb::Get_(CService &ip, int &wait) {
   int64 now = time(NULL);
   int cont = 0;
   int tot = unkId.size();
@@ -78,13 +78,13 @@ bool CAddrDb::Get_(CIPPort &ip, int &wait) {
   return true;
 }
 
-int CAddrDb::Lookup_(const CIPPort &ip) {
+int CAddrDb::Lookup_(const CService &ip) {
   if (ipToId.count(ip))
     return ipToId[ip];
   return -1;
 }
 
-void CAddrDb::Good_(const CIPPort &addr, int clientV, std::string clientSV) {
+void CAddrDb::Good_(const CService &addr, int clientV, std::string clientSV) {
   int id = Lookup_(addr);
   if (id == -1) return;
   unkId.erase(id);
@@ -101,7 +101,7 @@ void CAddrDb::Good_(const CIPPort &addr, int clientV, std::string clientSV) {
   ourId.push_back(id);
 }
 
-void CAddrDb::Bad_(const CIPPort &addr, int ban)
+void CAddrDb::Bad_(const CService &addr, int ban)
 {
   int id = Lookup_(addr);
   if (id == -1) return;
@@ -130,7 +130,7 @@ void CAddrDb::Bad_(const CIPPort &addr, int ban)
   nDirty++;
 }
 
-void CAddrDb::Skipped_(const CIPPort &addr)
+void CAddrDb::Skipped_(const CService &addr)
 {
   int id = Lookup_(addr);
   if (id == -1) return;
@@ -144,7 +144,7 @@ void CAddrDb::Skipped_(const CIPPort &addr)
 void CAddrDb::Add_(const CAddress &addr, bool force) {
   if (!force && !addr.IsRoutable())
     return;
-  CIPPort ipp(addr);
+  CService ipp(addr);
   if (banned.count(ipp)) {
     time_t bantime = banned[ipp];
     if (force || (bantime < time(NULL) && addr.nTime > bantime))
@@ -180,7 +180,7 @@ void CAddrDb::Add_(const CAddress &addr, bool force) {
   nDirty++;
 }
 
-void CAddrDb::GetIPs_(set<CIP>& ips, int max, bool fOnlyIPv4) {
+void CAddrDb::GetIPs_(set<CNetAddr>& ips, int max, const bool* nets) {
   if (goodId.size() == 0) {
     int id = -1;
     if (ourId.size() == 0) {
@@ -208,8 +208,8 @@ void CAddrDb::GetIPs_(set<CIP>& ips, int max, bool fOnlyIPv4) {
     ids.insert(id);
   }
   for (set<int>::const_iterator it = ids.begin(); it != ids.end(); it++) {
-    CIPPort &ip = idToInfo[*it].ip;
-    if (ip.IsValid() && (!fOnlyIPv4 || ip.IsIPv4()))
+    CService &ip = idToInfo[*it].ip;
+    if (nets[ip.GetNetwork()])
       ips.insert(ip);
   }
 }

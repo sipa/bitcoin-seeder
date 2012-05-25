@@ -127,7 +127,9 @@ error:
 }
 
 
-int static write_record_a(unsigned char** outpos, const unsigned char *outend, const char *name, int offset, dns_class cls, int ttl, const struct in_addr *ip) {
+int static write_record_a(unsigned char** outpos, const unsigned char *outend, const char *name, int offset, dns_class cls, int ttl, const addr_t *ip) {
+  if (ip->v != 4)
+     return -6;
   unsigned char *oldpos = *outpos;
   int error = 0;
   int ret = write_record(outpos, outend, name, offset, TYPE_A, cls, ttl);
@@ -136,16 +138,17 @@ int static write_record_a(unsigned char** outpos, const unsigned char *outend, c
   // rdlength
   *((*outpos)++) = 0; *((*outpos)++) = 4;
   // rdata
-  const unsigned char *pd = (const unsigned char*)ip;
   for (int i=0; i<4; i++)
-    *((*outpos)++) = pd[i];
+    *((*outpos)++) = ip->data.v4[i];
   return 0;
 error:
   *outpos = oldpos;
   return error;
 }
 
-int static write_record_aaaa(unsigned char** outpos, const unsigned char *outend, const char *name, int offset, dns_class cls, int ttl, const struct in6_addr *ip) {
+int static write_record_aaaa(unsigned char** outpos, const unsigned char *outend, const char *name, int offset, dns_class cls, int ttl, const addr_t *ip) {
+  if (ip->v != 6)
+     return -6;
   unsigned char *oldpos = *outpos;
   int error = 0;
   int ret = write_record(outpos, outend, name, offset, TYPE_AAAA, cls, ttl);
@@ -154,9 +157,8 @@ int static write_record_aaaa(unsigned char** outpos, const unsigned char *outend
   // rdlength
   *((*outpos)++) = 0; *((*outpos)++) = 16;
   // rdata
-  const unsigned char *pd = (const unsigned char*)ip;
   for (int i=0; i<16; i++)
-    *((*outpos)++) = pd[i];
+    *((*outpos)++) = ip->data.v6[i];
   return 0;
 error:
   *outpos = oldpos;
@@ -293,13 +295,17 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
     if (!ret2) { outbuf[7]++; }
   }
   
-  // A records
-  if ((typ == TYPE_A || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY)) {
-    struct in_addr addr[32];
-    int naddr = opt->cb((void*)opt, addr, 32, 1);
+  // A/AAAA records
+  if ((typ == TYPE_A || typ == TYPE_AAAA || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY)) {
+    addr_t addr[32];
+    int naddr = opt->cb((void*)opt, addr, 32, typ == TYPE_A || typ == QTYPE_ANY, typ == TYPE_AAAA || typ == QTYPE_ANY);
     int n = 0;
     while (n < naddr) {
-      int ret = write_record_a(&outpos, outend - auth_size, "", offset, CLASS_IN, opt->datattl, &addr[n]);
+      int ret = 1;
+      if (addr->v == 4)
+         ret = write_record_a(&outpos, outend - auth_size, "", offset, CLASS_IN, opt->datattl, &addr[n]);
+      else if (addr->v == 6)
+         ret = write_record_aaaa(&outpos, outend - auth_size, "", offset, CLASS_IN, opt->datattl, &addr[n]);
 //      printf("wrote A record: %i\n", ret);
       if (!ret) {
         n++;

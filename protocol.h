@@ -62,18 +62,18 @@ enum
     NODE_NETWORK = (1 << 0),
 };
 
-class CAddress : public CIPPort
+class CAddress : public CService
 {
     public:
         CAddress();
-        CAddress(CIPPort ipIn, uint64 nServicesIn=NODE_NETWORK);
+        CAddress(CService ipIn, uint64 nServicesIn=NODE_NETWORK);
 
         void Init();
 
         IMPLEMENT_SERIALIZE
             (
              CAddress* pthis = const_cast<CAddress*>(this);
-             CIPPort* pip = (CIPPort*)pthis;
+             CService* pip = (CService*)pthis;
              if (fRead)
                  pthis->Init();
              if (nType & SER_DISK)

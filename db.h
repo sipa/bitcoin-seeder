@@ -12,7 +12,7 @@
 
 #define MIN_RETRY 1000
 
-std::string static inline ToString(const CIPPort &ip) {
+std::string static inline ToString(const CService &ip) {
   std::string str = ip.ToString();
   while (str.size() < 22) str += ' ';
   return str;
@@ -44,7 +44,7 @@ public:
 
 class CAddrReport {
 public:
-  CIPPort ip;
+  CService ip;
   int clientVersion;
   double uptime[5];
   std::string clientSubVersion;
@@ -53,7 +53,7 @@ public:
 
 class CAddrInfo {
 private:
-  CIPPort ip;
+  CService ip;
   uint64_t services;
   int64 lastTry;
   int64 ourLastTry;
@@ -87,7 +87,6 @@ public:
     if (ip.GetPort() != 8333) return false;
     if (!(services & NODE_NETWORK)) return false;
     if (!ip.IsRoutable()) return false;
-    if (!ip.IsIPv4()) return false;
     if (clientVersion && clientVersion < 32400) return false;
 
     if (total <= 3 && success * 2 >= total) return true;
@@ -170,7 +169,7 @@ private:
   mutable CCriticalSection cs;
   int nId; // number of address id's
   std::map<int, CAddrInfo> idToInfo; // map address id to address info (b,c,d,e)
-  std::map<CIPPort, int> ipToId; // map ip to id (b,c,d,e)
+  std::map<CService, int> ipToId; // map ip to id (b,c,d,e)
   std::deque<int> ourId; // sequence of tried nodes, in order we have tried connecting to them (c,d)
   std::set<int> unkId; // set of nodes not yet tried (b)
   std::set<int> goodId; // set of good nodes  (d, good e)
@@ -179,15 +178,15 @@ private:
 protected:
   // internal routines that assume proper locks are acquired
   void Add_(const CAddress &addr, bool force);   // add an address
-  bool Get_(CIPPort &ip, int& wait);      // get an IP to test (must call Good_, Bad_, or Skipped_ on result afterwards)
-  void Good_(const CIPPort &ip, int clientV, std::string clientSV); // mark an IP as good (must have been returned by Get_)
-  void Bad_(const CIPPort &ip, int ban);  // mark an IP as bad (and optionally ban it) (must have been returned by Get_)
-  void Skipped_(const CIPPort &ip);       // mark an IP as skipped (must have been returned by Get_)
-  int Lookup_(const CIPPort &ip);         // look up id of an IP
-  void GetIPs_(std::set<CIP>& ips, int max, bool fOnlyIPv4); // get a random set of IPs (shared lock only)
+  bool Get_(CService &ip, int& wait);      // get an IP to test (must call Good_, Bad_, or Skipped_ on result afterwards)
+  void Good_(const CService &ip, int clientV, std::string clientSV); // mark an IP as good (must have been returned by Get_)
+  void Bad_(const CService &ip, int ban);  // mark an IP as bad (and optionally ban it) (must have been returned by Get_)
+  void Skipped_(const CService &ip);       // mark an IP as skipped (must have been returned by Get_)
+  int Lookup_(const CService &ip);         // look up id of an IP
+  void GetIPs_(std::set<CNetAddr>& ips, int max, const bool* nets); // get a random set of IPs (shared lock only)
 
 public:
-  std::map<CIPPort, time_t> banned; // nodes that are banned, with their unban time (a)
+  std::map<CService, time_t> banned; // nodes that are banned, with their unban time (a)
 
   void GetStats(CAddrDbStats &stats) {
     SHARED_CRITICAL_BLOCK(cs) {
@@ -272,24 +271,24 @@ public:
       for (int i=0; i<vAddr.size(); i++)
         Add_(vAddr[i], fForce);
   }
-  void Good(const CIPPort &addr, int clientVersion, std::string clientSubVersion) {
+  void Good(const CService &addr, int clientVersion, std::string clientSubVersion) {
     CRITICAL_BLOCK(cs)
       Good_(addr, clientVersion, clientSubVersion);
   }
-  void Skipped(const CIPPort &addr) {
+  void Skipped(const CService &addr) {
     CRITICAL_BLOCK(cs)
       Skipped_(addr);
   }
-  void Bad(const CIPPort &addr, int ban = 0) {
+  void Bad(const CService &addr, int ban = 0) {
     CRITICAL_BLOCK(cs)
       Bad_(addr, ban);
   }
-  bool Get(CIPPort &ip, int& wait) {
+  bool Get(CService &ip, int& wait) {
     CRITICAL_BLOCK(cs)
       return Get_(ip, wait);
   }
-  void GetIPs(std::set<CIP>& ips, int max, bool fOnlyIPv4 = true) {
+  void GetIPs(std::set<CNetAddr>& ips, int max, const bool *nets) {
     SHARED_CRITICAL_BLOCK(cs)
-      GetIPs_(ips, max, fOnlyIPv4);
+      GetIPs_(ips, max, nets);
   }
 };

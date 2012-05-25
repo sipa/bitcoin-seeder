@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include <errno.h>
 #include <openssl/sha.h>
+#include <stdarg.h>
 
 #include "uint256.h"
 
@@ -25,21 +26,6 @@
 #define WSAENOTSOCK         EBADF
 #define INVALID_SOCKET      (SOCKET)(~0)
 #define SOCKET_ERROR        -1
-
-inline int myclosesocket(SOCKET& hSocket)
-{
-    if (hSocket == INVALID_SOCKET)
-        return WSAENOTSOCK;
-#ifdef WIN32
-    int ret = closesocket(hSocket);
-#else
-    int ret = close(hSocket);
-#endif
-    hSocket = INVALID_SOCKET;
-    return ret;
-}
-#define closesocket(s)      myclosesocket(s)
-
 
 // Wrapper to automatically initialize mutex
 class CCriticalSection
@@ -87,10 +73,30 @@ template<typename T1> inline uint256 Hash(const T1 pbegin, const T1 pend)
 }
 
 void static inline Sleep(int nMilliSec) {
-  struct timespec wa;
-  wa.tv_sec = nMilliSec/1000;
-  wa.tv_nsec = (nMilliSec % 1000) * 1000000;
-  nanosleep(&wa, NULL);
+    struct timespec wa;
+    wa.tv_sec = nMilliSec/1000;
+    wa.tv_nsec = (nMilliSec % 1000) * 1000000;
+    nanosleep(&wa, NULL);
 }
+
+
+std::string vstrprintf(const std::string &format, va_list ap);
+
+std::string static inline strprintf(const std::string &format, ...) {
+    va_list arg_ptr;
+    va_start(arg_ptr, format);
+    std::string ret = vstrprintf(format, arg_ptr);
+    va_end(arg_ptr);
+    return ret;
+}
+
+bool static inline error(std::string err) {
+    return false;
+}
+
+std::vector<unsigned char> DecodeBase32(const char* p, bool* pfInvalid = NULL);
+std::string DecodeBase32(const std::string& str);
+std::string EncodeBase32(const unsigned char* pch, size_t len);
+std::string EncodeBase32(const std::string& str);
 
 #endif

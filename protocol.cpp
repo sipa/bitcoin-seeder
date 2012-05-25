@@ -81,12 +81,12 @@ bool CMessageHeader::IsValid() const
 
 
 
-CAddress::CAddress() : CIPPort()
+CAddress::CAddress() : CService()
 {
     Init();
 }
 
-CAddress::CAddress(CIPPort ipIn, uint64 nServicesIn) : CIPPort(ipIn)
+CAddress::CAddress(CService ipIn, uint64 nServicesIn) : CService(ipIn)
 {
     Init();
     nServices = nServicesIn;
