@@ -132,7 +132,8 @@ extern "C" int GetIPList(void *thread, addr_t *addr, int max, int ipv4, int ipv6
 
 class CDnsThread {
 public:
-  dns_opt_t dns_opt;
+  dns_opt_t dns_opt; // must be first
+  const int id;
   vector<addr_t> cache;
   int nIPv4, nIPv6;
   time_t cacheTime;
@@ -179,7 +180,7 @@ public:
     }
   }
 
-  CDnsThread(CDnsSeedOpts* opts) {
+  CDnsThread(CDnsSeedOpts* opts, int idIn) : id(idIn) {
     dns_opt.host = opts->host;
     dns_opt.ns = opts->ns;
     dns_opt.mbox = opts->mbox;
@@ -206,9 +207,12 @@ public:
 extern "C" int GetIPList(void *data, addr_t* addr, int max, int ipv4, int ipv6) {
   CDnsThread *thread = (CDnsThread*)data;
   thread->cacheHit();
-  unsigned int size = (ipv4 ? thread->nIPv4 : 0) + (ipv6 ? thread->nIPv6 : 0);
+  unsigned int size = thread->cache.size();
+  unsigned int maxmax = (ipv4 ? thread->nIPv4 : 0) + (ipv6 ? thread->nIPv6 : 0);
   if (max > size)
     max = size;
+  if (max > maxmax)
+    max = maxmax;
   int i=0;
   while (i<max) {
     int j = i + (rand() % (size - i));
@@ -216,7 +220,9 @@ extern "C" int GetIPList(void *data, addr_t* addr, int max, int ipv4, int ipv6) 
         bool ok = (ipv4 && thread->cache[j].v == 4) || 
                   (ipv6 && thread->cache[j].v == 6);
         if (ok) break;
-        j = i + ((j - i + 1) % (size - i));
+        j++;
+        if (j==size)
+            j=i;
     } while(1);
     addr[i] = thread->cache[j];
     thread->cache[j] = thread->cache[i];
@@ -347,7 +353,7 @@ int main(int argc, char **argv) {
     printf("Starting %i DNS threads for %s on %s (port %i)...", opts.nDnsThreads, opts.host, opts.ns, opts.nPort);
     dnsThread.clear();
     for (int i=0; i<opts.nDnsThreads; i++) {
-      dnsThread.push_back(new CDnsThread(&opts));
+      dnsThread.push_back(new CDnsThread(&opts, i));
       pthread_create(&threadDns, NULL, ThreadDNS, dnsThread[i]);
       printf(".");
       Sleep(20);
