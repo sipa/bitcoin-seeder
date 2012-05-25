@@ -116,11 +116,12 @@ extern "C" void* ThreadCrawler(void* data) {
     int ban = 0;
     vector<CAddress> addr;
     int clientV = 0;
+    int blocks = 0;
     std::string clientSV;
-    bool ret = TestNode(ip,ban,clientV,clientSV,addr);
+    bool ret = TestNode(ip,ban,clientV,clientSV,blocks,addr);
     db.Add(addr);
     if (ret) {
-      db.Good(ip, clientV, clientSV);
+      db.Good(ip, clientV, clientSV, blocks);
     } else {
       db.Bad(ip, ban);
     }
@@ -256,11 +257,11 @@ extern "C" void* ThreadDumper(void*) {
       FILE *d = fopen("dnsseed.dump", "w");
       vector<CAddrReport> v = db.GetAll();
       sort(v.begin(), v.end(), StatCompare);
-      fprintf(d, "# address        \t%%(2h)\t%%(8h)\t%%(1d)\t%%(7d)\t%%(30d)\tversion\n");
+      fprintf(d, "# address        \t%%(2h)\t%%(8h)\t%%(1d)\t%%(7d)\t%%(30d)\tblocks\tversion\n");
       double stat[5]={0,0,0,0,0};
       for (vector<CAddrReport>::const_iterator it = v.begin(); it < v.end(); it++) {
         CAddrReport rep = *it;
-        fprintf(d, "%s\t%.2f%%\t%.2f%%\t%.2f%%\t%.2f%%\t%.2f%%\t%i \"%s\"\n", rep.ip.ToString().c_str(), 100.0*rep.uptime[0], 100.0*rep.uptime[1], 100.0*rep.uptime[2], 100.0*rep.uptime[3], 100.0*rep.uptime[4], rep.clientVersion, rep.clientSubVersion.c_str());
+        fprintf(d, "%s\t%.2f%%\t%.2f%%\t%.2f%%\t%.2f%%\t%.2f%%\t%i\t%i \"%s\"\n", rep.ip.ToString().c_str(), 100.0*rep.uptime[0], 100.0*rep.uptime[1], 100.0*rep.uptime[2], 100.0*rep.uptime[3], 100.0*rep.uptime[4], rep.blocks, rep.clientVersion, rep.clientSubVersion.c_str());
         stat[0] += rep.uptime[0];
         stat[1] += rep.uptime[1];
         stat[2] += rep.uptime[2];

@@ -46,6 +46,7 @@ class CAddrReport {
 public:
   CService ip;
   int clientVersion;
+  int blocks;
   double uptime[5];
   std::string clientSubVersion;
 };
@@ -64,17 +65,19 @@ private:
   CAddrStat stat1W;
   CAddrStat stat1M;
   int clientVersion;
+  int blocks;
   int total;
   int success;
   std::string clientSubVersion;
 public:
-  CAddrInfo() : services(0), lastTry(0), ourLastTry(0), ignoreTill(0), clientVersion(0), total(0), success(0) {}
+  CAddrInfo() : services(0), lastTry(0), ourLastTry(0), ignoreTill(0), clientVersion(0), blocks(0), total(0), success(0) {}
   
   CAddrReport GetReport() const {
     CAddrReport ret;
     ret.ip = ip;
     ret.clientVersion = clientVersion;
     ret.clientSubVersion = clientSubVersion;
+    ret.blocks = blocks;
     ret.uptime[0] = stat2H.reliability;
     ret.uptime[1] = stat8H.reliability;
     ret.uptime[2] = stat1D.reliability;
@@ -118,7 +121,7 @@ public:
   friend class CAddrDb;
   
   IMPLEMENT_SERIALIZE (
-    unsigned char version = 2;
+    unsigned char version = 3;
     READWRITE(version);
     READWRITE(ip);
     READWRITE(services);
@@ -142,6 +145,8 @@ public:
       READWRITE(clientVersion);
       if (version >= 2)
           READWRITE(clientSubVersion);
+      if (version >= 3)
+          READWRITE(blocks);
     }
   )
 };
@@ -179,11 +184,11 @@ protected:
   // internal routines that assume proper locks are acquired
   void Add_(const CAddress &addr, bool force);   // add an address
   bool Get_(CService &ip, int& wait);      // get an IP to test (must call Good_, Bad_, or Skipped_ on result afterwards)
-  void Good_(const CService &ip, int clientV, std::string clientSV); // mark an IP as good (must have been returned by Get_)
+  void Good_(const CService &ip, int clientV, std::string clientSV, int blocks); // mark an IP as good (must have been returned by Get_)
   void Bad_(const CService &ip, int ban);  // mark an IP as bad (and optionally ban it) (must have been returned by Get_)
   void Skipped_(const CService &ip);       // mark an IP as skipped (must have been returned by Get_)
   int Lookup_(const CService &ip);         // look up id of an IP
-  void GetIPs_(std::set<CNetAddr>& ips, int max, const bool* nets); // get a random set of IPs (shared lock only)
+  void GetIPs_(std::set<CNetAddr>& ips, int max, const bool *nets); // get a random set of IPs (shared lock only)
 
 public:
   std::map<CService, time_t> banned; // nodes that are banned, with their unban time (a)
@@ -271,9 +276,9 @@ public:
       for (int i=0; i<vAddr.size(); i++)
         Add_(vAddr[i], fForce);
   }
-  void Good(const CService &addr, int clientVersion, std::string clientSubVersion) {
+  void Good(const CService &addr, int clientVersion, std::string clientSubVersion, int blocks) {
     CRITICAL_BLOCK(cs)
-      Good_(addr, clientVersion, clientSubVersion);
+      Good_(addr, clientVersion, clientSubVersion, blocks);
   }
   void Skipped(const CService &addr) {
     CRITICAL_BLOCK(cs)

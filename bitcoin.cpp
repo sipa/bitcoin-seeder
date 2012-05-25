@@ -258,9 +258,13 @@ public:
   std::string GetClientSubVersion() {
     return strSubVer;
   }
+  
+  int GetStartingHeight() {
+    return nStartingHeight;
+  }
 };
 
-bool TestNode(const CService &cip, int &ban, int &clientV, std::string &clientSV, vector<CAddress>& vAddr) {
+bool TestNode(const CService &cip, int &ban, int &clientV, std::string &clientSV, int &blocks, vector<CAddress>& vAddr) {
   try {
     CNode node(cip, vAddr);
     bool ret = node.Run();
@@ -271,6 +275,7 @@ bool TestNode(const CService &cip, int &ban, int &clientV, std::string &clientSV
     }
     clientV = node.GetClientVersion();
     clientSV = node.GetClientSubVersion();
+    blocks = node.GetStartingHeight();
 //  printf("%s: %s!!!\n", cip.ToString().c_str(), ret ? "GOOD" : "BAD");
     return ret;
   } catch(std::ios_base::failure& e) {
