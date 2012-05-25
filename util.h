@@ -90,8 +90,12 @@ std::string static inline strprintf(const std::string &format, ...) {
     return ret;
 }
 
-bool static inline error(std::string err) {
+bool static inline error(std::string err, ...) {
     return false;
+}
+
+bool static inline my_printf(std::string err, ...) {
+    return true;
 }
 
 std::vector<unsigned char> DecodeBase32(const char* p, bool* pfInvalid = NULL);
