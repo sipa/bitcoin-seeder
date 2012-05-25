@@ -302,9 +302,9 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
     int n = 0;
     while (n < naddr) {
       int ret = 1;
-      if (addr->v == 4)
+      if (addr[n].v == 4)
          ret = write_record_a(&outpos, outend - auth_size, "", offset, CLASS_IN, opt->datattl, &addr[n]);
-      else if (addr->v == 6)
+      else if (addr[n].v == 6)
          ret = write_record_aaaa(&outpos, outend - auth_size, "", offset, CLASS_IN, opt->datattl, &addr[n]);
 //      printf("wrote A record: %i\n", ret);
       if (!ret) {

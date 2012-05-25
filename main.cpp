@@ -220,6 +220,7 @@ extern "C" int GetIPList(void *data, addr_t* addr, int max, int ipv4, int ipv6) 
     addr[i] = thread->cache[j];
     thread->cache[j] = thread->cache[i];
     thread->cache[i] = addr[i];
+    i++;
   }
   return max;
 }
