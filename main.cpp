@@ -321,6 +321,7 @@ int main(int argc, char **argv) {
   setbuf(stdout, NULL);
   CDnsSeedOpts opts;
   opts.ParseCommandLine(argc, argv);
+  SetProxy(NET_TOR, CService("127.0.0.1", 9050));
   bool fDNS = true;
   if (!opts.ns) {
     printf("No nameserver set. Not starting DNS server.\n");
