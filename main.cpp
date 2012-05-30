@@ -17,9 +17,12 @@ public:
   int nThreads;
   int nPort;
   int nDnsThreads;
+  int fWipeBan;
+  int fWipeIgnore;
   const char *mbox;
   const char *ns;
   const char *host;
+  const char *tor;
   
   CDnsSeedOpts() : nThreads(24), nDnsThreads(24), nPort(53), mbox(NULL), ns(NULL), host(NULL) {}
   
@@ -34,6 +37,9 @@ public:
                               "-t <threads>    Number of crawlers to run in parallel (default 24)\n"
                               "-d <threads>    Number of DNS server threads (default 24)\n"
                               "-p <port>       UDP port to listen on (default 53)\n"
+                              "-o <ip:port>    Tor proxy IP/Port\n"
+                              "--wipeban       Wipe list of banned nodes\n"
+                              "--wipeignore    Wipe list of ignored nodes\n"
                               "-?, --help      Show this text\n"
                               "\n";
     bool showHelp = false;
@@ -46,11 +52,14 @@ public:
         {"threads", required_argument, 0, 't'},
         {"dnsthreads", required_argument, 0, 'd'},
         {"port", required_argument, 0, 'p'},
+        {"onion", required_argument, 0, 'o'},
+        {"wipeban", no_argument, &fWipeBan, 1},
+        {"wipeignore", no_argument, &fWipeBan, 1},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
       };
       int option_index = 0;
-      int c = getopt_long(argc, argv, "h:n:m:t:p:d:", long_options, &option_index);
+      int c = getopt_long(argc, argv, "h:n:m:t:p:d:o:", long_options, &option_index);
       if (c == -1) break;
       switch (c) {
         case 'h': {
@@ -86,6 +95,11 @@ public:
           break;
         }
         
+        case 'o': {
+          tor = optarg;
+          break;
+        }
+
         case '?': {
           showHelp = true;
           break;
@@ -322,7 +336,11 @@ int main(int argc, char **argv) {
   setbuf(stdout, NULL);
   CDnsSeedOpts opts;
   opts.ParseCommandLine(argc, argv);
-  SetProxy(NET_TOR, CService("127.0.0.1", 9050));
+  CService service(opts.tor, 9050);
+  if (service.IsValid()) {
+    printf("Using Tor proxy at %s\n", service.ToStringIPPort().c_str());
+    SetProxy(NET_TOR, service);
+  }
   bool fDNS = true;
   if (!opts.ns) {
     printf("No nameserver set. Not starting DNS server.\n");
@@ -337,8 +355,10 @@ int main(int argc, char **argv) {
     printf("Loading dnsseed.dat...");
     CAutoFile cf(f);
     cf >> db;
-    db.banned.clear();
-    db.ResetIgnores();
+    if (opts.fWipeBan)
+        db.banned.clear();
+    if (opts.fWipeIgnore)
+        db.ResetIgnores();
     printf("done\n");
   }
   pthread_t threadDns, threadSeed, threadDump, threadStats;
