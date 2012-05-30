@@ -305,6 +305,7 @@ extern "C" void* ThreadStats(void*) {
 static const string seeds[] = {"dnsseed.bluematt.me", "bitseed.xf2.org", "dnsseed.bitcoin.dashjr.org", "seed.bitcoin.sipa.be"};
 
 extern "C" void* ThreadSeeder(void*) {
+  db.Add(CService("kjy2eqzk4zwi5zd3.onion", 8333), true);
   do {
     for (int i=0; i<sizeof(seeds)/sizeof(seeds[0]); i++) {
       vector<CNetAddr> ips;
@@ -336,7 +337,8 @@ int main(int argc, char **argv) {
     printf("Loading dnsseed.dat...");
     CAutoFile cf(f);
     cf >> db;
-//    db.banned.clear();
+    db.banned.clear();
+    db.ResetIgnores();
     printf("done\n");
   }
   pthread_t threadDns, threadSeed, threadDump, threadStats;
