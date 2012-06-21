@@ -1,6 +1,7 @@
 #include <algorithm>
 
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <getopt.h>
@@ -333,6 +334,7 @@ extern "C" void* ThreadSeeder(void*) {
 }
 
 int main(int argc, char **argv) {
+  signal(SIGPIPE, SIG_IGN);
   setbuf(stdout, NULL);
   CDnsSeedOpts opts;
   opts.ParseCommandLine(argc, argv);
