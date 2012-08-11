@@ -1,7 +1,8 @@
-CXXFLAGS = -O2 -ggdb3 -march=nocona
+CXXFLAGS = -O3 -g0 -march=native -flto
+LDFLAGS = $(CXXFLAGS)
 
 dnsseed: dns.o bitcoin.o netbase.o protocol.o db.o main.o util.o
-	g++ -pthread -o dnsseed dns.o bitcoin.o netbase.o protocol.o db.o main.o util.o -lcrypto
+	g++ -pthread $(LDFLAGS) -o dnsseed dns.o bitcoin.o netbase.o protocol.o db.o main.o util.o -lcrypto
 
 %.o: %.cpp bitcoin.h netbase.h protocol.h db.h serialize.h uint256.h util.h
 	g++ -DUSE_IPV6 -pthread $(CXXFLAGS) -Wno-invalid-offsetof -c -o $@ $<
