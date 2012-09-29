@@ -35,6 +35,27 @@ enum Network ParseNetwork(std::string net) {
     return NET_UNROUTABLE;
 }
 
+void SplitHostPort(std::string in, int &portOut, std::string &hostOut) {
+    size_t colon = in.find_last_of(':');
+    // if a : is found, and it either follows a [...], or no other : is in the string, treat it as port separator
+    bool fHaveColon = colon != in.npos;
+    bool fBracketed = fHaveColon && (in[0]=='[' && in[colon-1]==']'); // if there is a colon, and in[0]=='[', colon is not 0, so in[colon-1] is safe
+    bool fMultiColon = fHaveColon && (in.find_last_of(':',colon-1) != in.npos);
+    if (fHaveColon && (colon==0 || fBracketed || !fMultiColon)) {
+        char *endp = NULL;
+        int n = strtol(in.c_str() + colon + 1, &endp, 10);
+        if (endp && *endp == 0 && n >= 0) {
+            in = in.substr(0, colon);
+            if (n > 0 && n < 0x10000)
+                portOut = n;
+        }
+    }
+    if (in.size()>0 && in[0] == '[' && in[in.size()-1] == ']')
+        hostOut = in.substr(1, in.size()-2);
+    else
+        hostOut = in;
+}
+
 bool static LookupIntern(const char *pszName, std::vector<CNetAddr>& vIP, unsigned int nMaxSolutions, bool fAllowLookup)
 {
     vIP.clear();
@@ -55,19 +76,17 @@ bool static LookupIntern(const char *pszName, std::vector<CNetAddr>& vIP, unsign
 #ifdef WIN32
 #  ifdef USE_IPV6
     aiHint.ai_family = AF_UNSPEC;
-    aiHint.ai_flags = fAllowLookup ? 0 : AI_NUMERICHOST;
 #  else
     aiHint.ai_family = AF_INET;
-    aiHint.ai_flags = fAllowLookup ? 0 : AI_NUMERICHOST;
 #  endif
+    aiHint.ai_flags = fAllowLookup ? 0 : AI_NUMERICHOST;
 #else
 #  ifdef USE_IPV6
     aiHint.ai_family = AF_UNSPEC;
-    aiHint.ai_flags = AI_ADDRCONFIG | (fAllowLookup ? 0 : AI_NUMERICHOST);
 #  else
     aiHint.ai_family = AF_INET;
-    aiHint.ai_flags = AI_ADDRCONFIG | (fAllowLookup ? 0 : AI_NUMERICHOST);
 #  endif
+    aiHint.ai_flags = fAllowLookup ? AI_ADDRCONFIG : AI_NUMERICHOST;
 #endif
     struct addrinfo *aiRes = NULL;
     int nErr = getaddrinfo(pszName, NULL, &aiHint, &aiRes);
@@ -125,36 +144,11 @@ bool Lookup(const char *pszName, std::vector<CService>& vAddr, int portDefault, 
     if (pszName[0] == 0)
         return false;
     int port = portDefault;
-    char psz[256];
-    char *pszHost = psz;
-    strlcpy(psz, pszName, sizeof(psz));
-    char* pszColon = strrchr(psz+1,':');
-    char *pszPortEnd = NULL;
-    int portParsed = pszColon ? strtoul(pszColon+1, &pszPortEnd, 10) : 0;
-    if (pszColon && pszPortEnd && pszPortEnd[0] == 0)
-    {
-        if (psz[0] == '[' && pszColon[-1] == ']')
-        {
-            pszHost = psz+1;
-            pszColon[-1] = 0;
-        }
-        else
-            pszColon[0] = 0;
-        if (port >= 0 && port <= USHRT_MAX)
-            port = portParsed;
-    }
-    else
-    {
-        if (psz[0] == '[' && psz[strlen(psz)-1] == ']')
-        {
-            pszHost = psz+1;
-            psz[strlen(psz)-1] = 0;
-        }
-
-    }
+    std::string hostname = "";
+    SplitHostPort(std::string(pszName), port, hostname);
 
     std::vector<CNetAddr> vIP;
-    bool fRet = LookupIntern(pszHost, vIP, nMaxSolutions, fAllowLookup);
+    bool fRet = LookupIntern(hostname.c_str(), vIP, nMaxSolutions, fAllowLookup);
     if (!fRet)
         return false;
     vAddr.resize(vIP.size());
@@ -232,7 +226,7 @@ bool static Socks5(string strDest, int port, SOCKET& hSocket)
     }
     char pszSocks5Init[] = "\5\1\0";
     char *pszSocks5 = pszSocks5Init;
-    ssize_t nSize = sizeof(pszSocks5Init);
+    ssize_t nSize = sizeof(pszSocks5Init) - 1;
 
     ssize_t ret = send(hSocket, pszSocks5, nSize, MSG_NOSIGNAL);
     if (ret != nSize)
@@ -254,7 +248,7 @@ bool static Socks5(string strDest, int port, SOCKET& hSocket)
     string strSocks5("\5\1");
     strSocks5 += '\000'; strSocks5 += '\003';
     strSocks5 += static_cast<char>(std::min((int)strDest.size(), 255));
-    strSocks5 += strDest; 
+    strSocks5 += strDest;
     strSocks5 += static_cast<char>((port >> 8) & 0xFF);
     strSocks5 += static_cast<char>((port >> 0) & 0xFF);
     ret = send(hSocket, strSocks5.c_str(), strSocks5.size(), MSG_NOSIGNAL);
@@ -486,7 +480,7 @@ bool ConnectSocket(const CService &addrDest, SOCKET& hSocketRet, int nTimeout)
     // first connect to proxy server
     if (!ConnectSocketDirectly(proxy.first, hSocket, nTimeout))
         return false;
- 
+
     // do socks negotiation
     switch (proxy.second) {
     case 4:
@@ -507,22 +501,9 @@ bool ConnectSocket(const CService &addrDest, SOCKET& hSocketRet, int nTimeout)
 
 bool ConnectSocketByName(CService &addr, SOCKET& hSocketRet, const char *pszDest, int portDefault, int nTimeout)
 {
-    string strDest(pszDest);
+    string strDest;
     int port = portDefault;
-
-    // split hostname and port
-    size_t colon = strDest.find_last_of(':');
-    if (colon != strDest.npos) {
-        char *endp = NULL;
-        int n = strtol(pszDest + colon + 1, &endp, 10);
-        if (endp && *endp == 0 && n >= 0) {
-            strDest = strDest.substr(0, colon);
-            if (n > 0 && n < 0x10000)
-                port = n;
-        }
-    }
-    if (strDest[0] == '[' && strDest[strDest.size()-1] == ']')
-        strDest = strDest.substr(1, strDest.size()-2);
+    SplitHostPort(string(pszDest), port, strDest);
 
     SOCKET hSocket = INVALID_SOCKET;
     CService addrResolved(CNetAddr(strDest, fNameLookup && !nameproxyInfo.second), port);
@@ -570,7 +551,7 @@ bool CNetAddr::SetSpecial(const std::string &strName)
         if (vchAddr.size() != 16-sizeof(pchOnionCat))
             return false;
         memcpy(ip, pchOnionCat, sizeof(pchOnionCat));
-        for (int i=0; i<16-sizeof(pchOnionCat); i++)
+        for (unsigned int i=0; i<16-sizeof(pchOnionCat); i++)
             ip[i + sizeof(pchOnionCat)] = vchAddr[i];
         return true;
     }
@@ -579,7 +560,7 @@ bool CNetAddr::SetSpecial(const std::string &strName)
         if (vchAddr.size() != 16-sizeof(pchGarliCat))
             return false;
         memcpy(ip, pchOnionCat, sizeof(pchGarliCat));
-        for (int i=0; i<16-sizeof(pchGarliCat); i++)
+        for (unsigned int i=0; i<16-sizeof(pchGarliCat); i++)
             ip[i + sizeof(pchGarliCat)] = vchAddr[i];
         return true;
     }
@@ -620,7 +601,7 @@ CNetAddr::CNetAddr(const std::string &strIp, bool fAllowLookup)
         *this = vIP[0];
 }
 
-int CNetAddr::GetByte(int n) const
+unsigned int CNetAddr::GetByte(int n) const
 {
     return ip[15-n];
 }
@@ -638,8 +619,8 @@ bool CNetAddr::IsIPv6() const
 bool CNetAddr::IsRFC1918() const
 {
     return IsIPv4() && (
-        GetByte(3) == 10 || 
-        (GetByte(3) == 192 && GetByte(2) == 168) || 
+        GetByte(3) == 10 ||
+        (GetByte(3) == 192 && GetByte(2) == 168) ||
         (GetByte(3) == 172 && (GetByte(2) >= 16 && GetByte(2) <= 31)));
 }
 
@@ -723,7 +704,7 @@ bool CNetAddr::IsMulticast() const
 
 bool CNetAddr::IsValid() const
 {
-    // Clean up 3-byte shifted addresses caused by garbage in size field
+    // Cleanup 3-byte shifted addresses caused by garbage in size field
     // of addr messages from versions before 0.2.9 checksum.
     // Two consecutive addr messages look like this:
     // header20 vectorlen3 addr26 addr26 addr26 header20 vectorlen3 addr26 addr26 addr26...
@@ -872,13 +853,13 @@ std::vector<unsigned char> CNetAddr::GetGroup() const
         nClass = NET_IPV4;
         nStartByte = 12;
     }
-    // for 6to4 tunneled addresses, use the encapsulated IPv4 address
+    // for 6to4 tunnelled addresses, use the encapsulated IPv4 address
     else if (IsRFC3964())
     {
         nClass = NET_IPV4;
         nStartByte = 2;
     }
-    // for Teredo-tunneled IPv6 addresses, use the encapsulated IPv4 address
+    // for Teredo-tunnelled IPv6 addresses, use the encapsulated IPv4 address
     else if (IsRFC4380())
     {
         vchRet.push_back(NET_IPV4);
@@ -918,10 +899,10 @@ std::vector<unsigned char> CNetAddr::GetGroup() const
     return vchRet;
 }
 
-int64 CNetAddr::GetHash() const
+uint64 CNetAddr::GetHash() const
 {
     uint256 hash = Hash(&ip[0], &ip[16]);
-    int64 nRet;
+    uint64 nRet;
     memcpy(&nRet, &hash, sizeof(nRet));
     return nRet;
 }
@@ -931,10 +912,11 @@ void CNetAddr::print() const
     printf("CNetAddr(%s)\n", ToString().c_str());
 }
 
-// C++ doesn't allow us to inherit from enums
+// private extensions to enum Network, only returned by GetExtNetwork,
+// and only used in GetReachabilityFrom
 static const int NET_UNKNOWN = NET_MAX + 0;
 static const int NET_TEREDO  = NET_MAX + 1;
-int GetExtNetwork(const CNetAddr *addr)
+int static GetExtNetwork(const CNetAddr *addr)
 {
     if (addr == NULL)
         return NET_UNKNOWN;
@@ -974,7 +956,7 @@ int CNetAddr::GetReachabilityFrom(const CNetAddr *paddrPartner) const
         default:         return REACH_DEFAULT;
         case NET_TEREDO: return REACH_TEREDO;
         case NET_IPV4:   return REACH_IPV4;
-        case NET_IPV6:   return fTunnel ? REACH_IPV6_WEAK : REACH_IPV6_STRONG; // only prefer giving our IPv6 address if it's not tunneled
+        case NET_IPV6:   return fTunnel ? REACH_IPV6_WEAK : REACH_IPV6_STRONG; // only prefer giving our IPv6 address if it's not tunnelled
         }
     case NET_TOR:
         switch(ourNet) {
@@ -1115,7 +1097,7 @@ bool operator<(const CService& a, const CService& b)
 bool CService::GetSockAddr(struct sockaddr* paddr, socklen_t *addrlen) const
 {
     if (IsIPv4()) {
-        if (*addrlen < sizeof(struct sockaddr_in))
+        if (*addrlen < (socklen_t)sizeof(struct sockaddr_in))
             return false;
         *addrlen = sizeof(struct sockaddr_in);
         struct sockaddr_in *paddrin = (struct sockaddr_in*)paddr;
@@ -1128,7 +1110,7 @@ bool CService::GetSockAddr(struct sockaddr* paddr, socklen_t *addrlen) const
     }
 #ifdef USE_IPV6
     if (IsIPv6()) {
-        if (*addrlen < sizeof(struct sockaddr_in6))
+        if (*addrlen < (socklen_t)sizeof(struct sockaddr_in6))
             return false;
         *addrlen = sizeof(struct sockaddr_in6);
         struct sockaddr_in6 *paddrin6 = (struct sockaddr_in6*)paddr;
@@ -1155,7 +1137,7 @@ std::vector<unsigned char> CService::GetKey() const
 
 std::string CService::ToStringPort() const
 {
-    return strprintf("%i", port);
+    return strprintf("%u", port);
 }
 
 std::string CService::ToStringIPPort() const
