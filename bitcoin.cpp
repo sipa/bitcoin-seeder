@@ -26,6 +26,13 @@ class CNode {
   int64 doneAfter;
   CAddress you;
 
+  int GetTimeout() {
+      if (you.IsTor())
+          return 60;
+      else
+          return 10;
+  }
+
   void BeginMessage(const char *pszCommand) {
     if (nHeaderStart != -1) AbortMessage();
     nHeaderStart = vSend.size();
@@ -84,7 +91,7 @@ class CNode {
     // printf("\n%s: version %i\n", ToString(you).c_str(), nVersion);
     BeginMessage("getaddr");
     EndMessage();
-    doneAfter = time(NULL) + 10;
+    doneAfter = time(NULL) + GetTimeout();
   }
 
   bool ProcessMessage(string strCommand, CDataStream& vRecv) {
@@ -217,7 +224,7 @@ public:
         wa.tv_sec = doneAfter - now;
         wa.tv_usec = 0;
       } else {
-        wa.tv_sec = 10;
+        wa.tv_sec = GetTimeout();
         wa.tv_usec = 0;
       }
       int ret = select(sock+1, &set, NULL, &set, &wa);
