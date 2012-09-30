@@ -270,10 +270,13 @@ extern "C" void* ThreadDumper(void*) {
   do {
     Sleep(100000);
     {
-      FILE *f = fopen("dnsseed.dat","w+");
+      FILE *f = fopen("dnsseed.dat.new","w+");
       if (f) {
-        CAutoFile cf(f);
-        cf << db;
+        {
+          CAutoFile cf(f);
+          cf << db;
+        }
+        rename("dnsseed.dat.new", "dnsseed.dat");
       }
       FILE *d = fopen("dnsseed.dump", "w");
       vector<CAddrReport> v = db.GetAll();
