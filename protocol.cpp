@@ -15,6 +15,8 @@
 # include <arpa/inet.h>
 #endif
 
+bool fTestNet = false;
+
 static const char* ppszTypeName[] =
 {
     "ERROR",

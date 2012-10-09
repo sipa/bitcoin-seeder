@@ -15,6 +15,8 @@
 #include <string>
 #include "uint256.h"
 
+extern unsigned short nP2Port;
+
 extern bool fTestNet;
 static inline unsigned short GetDefaultPort(const bool testnet = fTestNet)
 {

@@ -87,7 +87,7 @@ public:
   }
   
   bool IsGood() const {
-    if (ip.GetPort() != 8333) return false;
+    if (ip.GetPort() != ::nP2Port) return false;
     if (!(services & NODE_NETWORK)) return false;
     if (!ip.IsRoutable()) return false;
     if (clientVersion && clientVersion < 32400) return false;
