@@ -17,6 +17,7 @@ class CDnsSeedOpts {
 public:
   int nThreads;
   int nPort;
+  int nP2Port;
   int nDnsThreads;
   int fWipeBan;
   int fWipeIgnore;
@@ -24,14 +25,18 @@ public:
   const char *ns;
   const char *host;
   const char *tor;
+  const char *magic;
+  vector<string> vSeeds;
   
-  CDnsSeedOpts() : nThreads(24), nDnsThreads(24), nPort(53), mbox(NULL), ns(NULL), host(NULL) {}
+  CDnsSeedOpts() : nThreads(24), nDnsThreads(24), nPort(53), fWipeBan(0), fWipeIgnore(0), mbox(NULL), ns(NULL), host(NULL), tor(NULL), magic(NULL), vSeeds()
+    { nP2Port = GetDefaultPort(); }
   
   void ParseCommandLine(int argc, char **argv) {
     static const char *help = "Bitcoin-seeder\n"
                               "Usage: %s -h <host> -n <ns> [-m <mbox>] [-t <threads>] [-p <port>]\n"
                               "\n"
                               "Options:\n"
+                              "-s <seed>       Seed node to collect peers from (replaces default)\n"
                               "-h <host>       Hostname of the DNS seed\n"
                               "-n <ns>         Hostname of the nameserver\n"
                               "-m <mbox>       E-Mail address reported in SOA records\n"
@@ -39,6 +44,8 @@ public:
                               "-d <threads>    Number of DNS server threads (default 24)\n"
                               "-p <port>       UDP port to listen on (default 53)\n"
                               "-o <ip:port>    Tor proxy IP/Port\n"
+                              "--p2port <port> P2P port to connect to\n"
+                              "--magic <hex>   Magic string/network prefix\n"
                               "--wipeban       Wipe list of banned nodes\n"
                               "--wipeignore    Wipe list of ignored nodes\n"
                               "-?, --help      Show this text\n"
@@ -47,6 +54,7 @@ public:
 
     while(1) {
       static struct option long_options[] = {
+        {"seed", required_argument, 0, 's'},
         {"host", required_argument, 0, 'h'},
         {"ns",   required_argument, 0, 'n'},
         {"mbox", required_argument, 0, 'm'},
@@ -54,15 +62,22 @@ public:
         {"dnsthreads", required_argument, 0, 'd'},
         {"port", required_argument, 0, 'p'},
         {"onion", required_argument, 0, 'o'},
+        {"p2port", required_argument, 0, 'b'},
+        {"magic", required_argument, 0, 'k'},
         {"wipeban", no_argument, &fWipeBan, 1},
         {"wipeignore", no_argument, &fWipeBan, 1},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
       };
       int option_index = 0;
-      int c = getopt_long(argc, argv, "h:n:m:t:p:d:o:", long_options, &option_index);
+      int c = getopt_long(argc, argv, "s:h:n:m:t:p:d:o:b:k:", long_options, &option_index);
       if (c == -1) break;
       switch (c) {
+        case 's': {
+          vSeeds.push_back(optarg);
+          break;
+        }
+
         case 'h': {
           host = optarg;
           break;
@@ -98,6 +113,28 @@ public:
         
         case 'o': {
           tor = optarg;
+          break;
+        }
+
+        case 'b': {
+          int p = strtol(optarg, NULL, 10);
+          if (p > 0 && p < 65536) nP2Port = p;
+          break;
+        }
+
+        case 'k': {
+          long int n;
+          unsigned int c;
+          magic = optarg;
+          if (strlen(magic)!=8)
+            break;
+          n = strtol(magic, NULL, 16);
+          if (n==0 && strcmp(magic, "00000000"))
+            break;
+          for (n=0; n<4; ++n) {
+            sscanf(&magic[n*2], "%2x", &c);
+            pchMessageStart[n] = (unsigned char) (c & 0xff);
+          }
           break;
         }
 
@@ -328,16 +365,25 @@ extern "C" void* ThreadStats(void*) {
   } while(1);
 }
 
-static const string seeds[] = {"dnsseed.bluematt.me", "bitseed.xf2.org", "dnsseed.bitcoin.dashjr.org", "seed.bitcoin.sipa.be"};
+static vector<string> vSeeds;
+unsigned short nP2Port;
 
 extern "C" void* ThreadSeeder(void*) {
-  db.Add(CService("kjy2eqzk4zwi5zd3.onion", 8333), true);
+  vector<string> vDnsSeeds;
+  vector<string>::iterator itr;
+  for (itr = vSeeds.begin(); itr != vSeeds.end(); itr++) {
+    size_t len = itr->length();
+    if (len>=6 && !itr->compare(len-6, 6, ".onion"))
+      db.Add(CService(itr->c_str(), nP2Port), true);
+    else
+      vDnsSeeds.push_back(*itr);
+  }
   do {
-    for (int i=0; i<sizeof(seeds)/sizeof(seeds[0]); i++) {
+    for (itr = vDnsSeeds.begin(); itr != vDnsSeeds.end(); itr++) {
       vector<CNetAddr> ips;
-      LookupHost(seeds[i].c_str(), ips);
+      LookupHost(itr->c_str(), ips);
       for (vector<CNetAddr>::iterator it = ips.begin(); it != ips.end(); it++) {
-        db.Add(CService(*it, 8333), true);
+        db.Add(CService(*it, nP2Port), true);
       }
     }
     Sleep(1800000);
@@ -349,6 +395,16 @@ int main(int argc, char **argv) {
   setbuf(stdout, NULL);
   CDnsSeedOpts opts;
   opts.ParseCommandLine(argc, argv);
+  nP2Port = opts.nP2Port;
+  vSeeds.reserve(vSeeds.size() + opts.vSeeds.size());
+  vSeeds.insert(vSeeds.end(), opts.vSeeds.begin(), opts.vSeeds.end());
+  if (opts.vSeeds.empty()) {
+    vSeeds.push_back("kjy2eqzk4zwi5zd3.onion");
+    vSeeds.push_back("dnsseed.bluematt.me");
+    vSeeds.push_back("bitseed.xf2.org");
+    vSeeds.push_back("dnsseed.bitcoin.dashjr.org");
+    vSeeds.push_back("seed.bitcoin.sipa.be");
+  }
   if (opts.tor) {
     CService service(opts.tor, 9050);
     if (service.IsValid()) {
