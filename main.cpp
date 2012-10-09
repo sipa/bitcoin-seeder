@@ -349,10 +349,12 @@ int main(int argc, char **argv) {
   setbuf(stdout, NULL);
   CDnsSeedOpts opts;
   opts.ParseCommandLine(argc, argv);
-  CService service(opts.tor, 9050);
-  if (service.IsValid()) {
-    printf("Using Tor proxy at %s\n", service.ToStringIPPort().c_str());
-    SetProxy(NET_TOR, service);
+  if (opts.tor) {
+    CService service(opts.tor, 9050);
+    if (service.IsValid()) {
+      printf("Using Tor proxy at %s\n", service.ToStringIPPort().c_str());
+      SetProxy(NET_TOR, service);
+    }
   }
   bool fDNS = true;
   if (!opts.ns) {
