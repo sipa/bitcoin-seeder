@@ -270,6 +270,8 @@ extern "C" void* ThreadDumper(void*) {
   do {
     Sleep(100000);
     {
+      vector<CAddrReport> v = db.GetAll();
+      sort(v.begin(), v.end(), StatCompare);
       FILE *f = fopen("dnsseed.dat.new","w+");
       if (f) {
         {
@@ -279,8 +281,6 @@ extern "C" void* ThreadDumper(void*) {
         rename("dnsseed.dat.new", "dnsseed.dat");
       }
       FILE *d = fopen("dnsseed.dump", "w");
-      vector<CAddrReport> v = db.GetAll();
-      sort(v.begin(), v.end(), StatCompare);
       fprintf(d, "# address        \t%%(2h)\t%%(8h)\t%%(1d)\t%%(7d)\t%%(30d)\tblocks\tversion\n");
       double stat[5]={0,0,0,0,0};
       for (vector<CAddrReport>::const_iterator it = v.begin(); it < v.end(); it++) {
