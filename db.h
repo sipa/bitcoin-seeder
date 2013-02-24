@@ -105,14 +105,15 @@ public:
   int GetBanTime() const {
     if (IsGood()) return 0;
     if (clientVersion && clientVersion < 31900) { return 604800; }
+    if (stat1M.reliability - stat1M.weight + 1.0 < 0.04 && stat1M.count > 2) { return 30*86400; }
     return 0;
   }
   int GetIgnoreTime() const {
     if (IsGood()) return 0;
-    if (stat1M.reliability - stat1M.weight + 1.0 < 0.08 && stat1D.count > 48) { return 8*3600; }
-    if (stat1W.reliability - stat1W.weight + 1.0 < 0.12 && stat8H.count > 24) { return 4*3600; }
-    if (stat1D.reliability - stat1D.weight + 1.0 < 0.16 && stat1D.count > 12) { return 2*3600; }
-    if (stat8H.reliability - stat8H.weight + 1.0 < 0.20 && stat8H.count > 6)  { return 1*3600; }
+    if (stat1M.reliability - stat1M.weight + 1.0 < 0.08 && stat1M.count > 1) { return 10*86400; }
+    if (stat1W.reliability - stat1W.weight + 1.0 < 0.12 && stat1W.count > 1)  { return 3*86400; }
+    if (stat1D.reliability - stat1D.weight + 1.0 < 0.16 && stat1D.count > 1)  { return 8*3600; }
+    if (stat8H.reliability - stat8H.weight + 1.0 < 0.20 && stat8H.count > 1)  { return 2*3600; }
     return 0;
   }
   
