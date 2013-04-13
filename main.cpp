@@ -376,17 +376,6 @@ int main(int argc, char **argv) {
         db.ResetIgnores();
     printf("done\n");
   }
-  pthread_t threadDns, threadSeed, threadDump, threadStats;
-  printf("Starting seeder...");
-  pthread_create(&threadSeed, NULL, ThreadSeeder, NULL);
-  printf("done\n");
-  printf("Starting %i crawler threads...", opts.nThreads);
-  for (int i=0; i<opts.nThreads; i++) {
-    pthread_t thread;
-    pthread_create(&thread, NULL, ThreadCrawler, NULL);
-  }
-  printf("done\n");
-  pthread_create(&threadDump, NULL, ThreadDumper, NULL);
   if (fDNS) {
     printf("Starting %i DNS threads for %s on %s (port %i)...", opts.nDnsThreads, opts.host, opts.ns, opts.nPort);
     dnsThread.clear();
@@ -398,6 +387,17 @@ int main(int argc, char **argv) {
     }
     printf("done\n");
   }
+  pthread_t threadDns, threadSeed, threadDump, threadStats;
+  printf("Starting seeder...");
+  pthread_create(&threadSeed, NULL, ThreadSeeder, NULL);
+  printf("done\n");
+  printf("Starting %i crawler threads...", opts.nThreads);
+  for (int i=0; i<opts.nThreads; i++) {
+    pthread_t thread;
+    pthread_create(&thread, NULL, ThreadCrawler, NULL);
+  }
+  printf("done\n");
+  pthread_create(&threadDump, NULL, ThreadDumper, NULL);
   pthread_create(&threadStats, NULL, ThreadStats, NULL);
   void* res;
   pthread_join(threadDump, &res);
