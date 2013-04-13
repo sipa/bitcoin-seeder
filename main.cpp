@@ -25,7 +25,7 @@ public:
   const char *host;
   const char *tor;
   
-  CDnsSeedOpts() : nThreads(24), nDnsThreads(24), nPort(53), mbox(NULL), ns(NULL), host(NULL) {}
+  CDnsSeedOpts() : nThreads(24), nDnsThreads(24), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL) {}
   
   void ParseCommandLine(int argc, char **argv) {
     static const char *help = "Bitcoin-seeder\n"
