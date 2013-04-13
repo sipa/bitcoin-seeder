@@ -51,16 +51,9 @@ bool CAddrDb::Get_(CService &ip, int &wait) {
     int rnd = rand() % tot;
     int ret;
     if (rnd < unkId.size()) {
-      if (rnd*10 < unkId.size()) {
-        // once every 10 attempts, restart with the oldest unknown IP
-        set<int>::iterator it = unkId.begin();
-        ret = *it;
-      } else {
-        // 90% of the time try the last learned IP
-        set<int>::reverse_iterator it = unkId.rbegin();
-        ret = *it;
-      }
-      unkId.erase(ret);
+      set<int>::iterator it = unkId.end(); it--;
+      ret = *it;
+      unkId.erase(it);
     } else {
       ret = ourId.front();
       if (time(NULL) - idToInfo[ret].ourLastTry < MIN_RETRY) return false;
