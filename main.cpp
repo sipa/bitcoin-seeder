@@ -120,26 +120,27 @@ CAddrDb db;
 
 extern "C" void* ThreadCrawler(void* data) {
   do {
-    CService ip;
+    std::vector<CServiceResult> ips;
     int wait = 5;
-    if (!db.Get(ip, wait)) {
+    db.GetMany(ips, 100, wait);
+    if (ips.empty()) {
       wait *= 1000;
       wait += rand() % (500 * NTHREADS);
       Sleep(wait);
       continue;
     }
-    int ban = 0;
+    printf("Got %i IPs to test!\n", (int)ips.size());
     vector<CAddress> addr;
-    int clientV = 0;
-    int blocks = 0;
-    std::string clientSV;
-    bool ret = TestNode(ip,ban,clientV,clientSV,blocks,addr);
-    db.Add(addr);
-    if (ret) {
-      db.Good(ip, clientV, clientSV, blocks);
-    } else {
-      db.Bad(ip, ban);
+    for (int i=0; i<ips.size(); i++) {
+      CServiceResult &res = ips[i];
+      res.nBanTime = 0;
+      res.nClientV = 0;
+      res.nHeight = 0;
+      res.strClientV = "";
+      res.fGood = TestNode(res.service,res.nBanTime,res.nClientV,res.strClientV,res.nHeight,addr);
     }
+    db.ResultMany(ips);
+    db.Add(addr);
   } while(1);
 }
 
@@ -376,6 +377,7 @@ int main(int argc, char **argv) {
         db.ResetIgnores();
     printf("done\n");
   }
+  pthread_t threadDns, threadSeed, threadDump, threadStats;
   if (fDNS) {
     printf("Starting %i DNS threads for %s on %s (port %i)...", opts.nDnsThreads, opts.host, opts.ns, opts.nPort);
     dnsThread.clear();
@@ -387,7 +389,6 @@ int main(int argc, char **argv) {
     }
     printf("done\n");
   }
-  pthread_t threadDns, threadSeed, threadDump, threadStats;
   printf("Starting seeder...");
   pthread_create(&threadSeed, NULL, ThreadSeeder, NULL);
   printf("done\n");
