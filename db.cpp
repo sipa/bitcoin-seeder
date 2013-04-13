@@ -29,25 +29,12 @@ void CAddrInfo::Update(bool good) {
 bool CAddrDb::Get_(CService &ip, int &wait) {
   int64 now = time(NULL);
   int cont = 0;
-  int tot = unkId.size();
+  int tot = unkId.size() + ourId.size();
+  if (tot == 0) {
+    wait = 5;
+    return false;
+  }
   do {
-    deque<int>::iterator it = ourId.begin();
-    while (it < ourId.end()) {
-      if (now - idToInfo[*it].ourLastTry > MIN_RETRY) {
-        tot++;
-        it++;
-      } else {
-        break;
-      }
-    }
-    if (tot == 0) {
-      if (ourId.size() > 0) {
-        wait = MIN_RETRY - (now - idToInfo[ourId.front()].ourLastTry);
-      } else {
-        wait = 5;
-      }
-      return false;
-    }
     int rnd = rand() % tot;
     int ret;
     if (rnd < unkId.size()) {

@@ -25,7 +25,7 @@ public:
   const char *host;
   const char *tor;
 
-  CDnsSeedOpts() : nThreads(50), nDnsThreads(4), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL) {}
+  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL) {}
 
   void ParseCommandLine(int argc, char **argv) {
     static const char *help = "Bitcoin-seeder\n"
@@ -122,14 +122,13 @@ extern "C" void* ThreadCrawler(void* data) {
   do {
     std::vector<CServiceResult> ips;
     int wait = 5;
-    db.GetMany(ips, 100, wait);
+    db.GetMany(ips, 16, wait);
     if (ips.empty()) {
       wait *= 1000;
       wait += rand() % (500 * NTHREADS);
       Sleep(wait);
       continue;
     }
-    printf("Got %i IPs to test!\n", (int)ips.size());
     vector<CAddress> addr;
     for (int i=0; i<ips.size(); i++) {
       CServiceResult &res = ips[i];
@@ -398,8 +397,8 @@ int main(int argc, char **argv) {
     pthread_create(&thread, NULL, ThreadCrawler, NULL);
   }
   printf("done\n");
-  pthread_create(&threadDump, NULL, ThreadDumper, NULL);
   pthread_create(&threadStats, NULL, ThreadStats, NULL);
+  pthread_create(&threadDump, NULL, ThreadDumper, NULL);
   void* res;
   pthread_join(threadDump, &res);
   return 0;
