@@ -11,7 +11,11 @@ void CAddrInfo::Update(bool good) {
   lastTry = now;
   ourLastTry = now;
   total++;
-  if (good) success++;
+  if (good)
+  {
+    success++;
+    ourLastSuccess = now;
+  }
   stat2H.Update(good, age, 3600*2);
   stat8H.Update(good, age, 3600*8);
   stat1D.Update(good, age, 3600*24);

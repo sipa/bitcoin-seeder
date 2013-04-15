@@ -61,6 +61,7 @@ private:
   uint64_t services;
   int64 lastTry;
   int64 ourLastTry;
+  int64 ourLastSuccess;
   int64 ignoreTill;
   CAddrStat stat2H;
   CAddrStat stat8H;
@@ -73,7 +74,7 @@ private:
   int success;
   std::string clientSubVersion;
 public:
-  CAddrInfo() : services(0), lastTry(0), ourLastTry(0), ignoreTill(0), clientVersion(0), blocks(0), total(0), success(0) {}
+  CAddrInfo() : services(0), lastTry(0), ourLastTry(0), ourLastSuccess(0), ignoreTill(0), clientVersion(0), blocks(0), total(0), success(0) {}
   
   CAddrReport GetReport() const {
     CAddrReport ret;
@@ -126,7 +127,7 @@ public:
   friend class CAddrDb;
   
   IMPLEMENT_SERIALIZE (
-    unsigned char version = 3;
+    unsigned char version = 4;
     READWRITE(version);
     READWRITE(ip);
     READWRITE(services);
@@ -152,6 +153,8 @@ public:
           READWRITE(clientSubVersion);
       if (version >= 3)
           READWRITE(blocks);
+      if (version >= 4)
+          READWRITE(ourLastSuccess);
     }
   )
 };
