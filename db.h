@@ -54,6 +54,7 @@ public:
   std::string clientSubVersion;
   int64_t lastSuccess;
   bool fGood;
+  uint64_t services;
 };
 
 
@@ -91,6 +92,7 @@ public:
     ret.uptime[4] = stat1M.reliability;
     ret.lastSuccess = ourLastSuccess;
     ret.fGood = IsGood();
+    ret.services = services;
     return ret;
   }
   
