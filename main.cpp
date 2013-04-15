@@ -267,8 +267,11 @@ int StatCompare(const CAddrReport& a, const CAddrReport& b) {
 }
 
 extern "C" void* ThreadDumper(void*) {
+  int count = 0;
   do {
-    Sleep(100000);
+    Sleep(100000 << count); // First 100s, than 200s, 400s, 800s, 1600s, and then 3200s forever
+    if (count < 5)
+        count++;
     {
       vector<CAddrReport> v = db.GetAll();
       sort(v.begin(), v.end(), StatCompare);
