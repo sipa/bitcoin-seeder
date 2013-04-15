@@ -52,6 +52,7 @@ public:
   int blocks;
   double uptime[5];
   std::string clientSubVersion;
+  int64_t lastSuccess;
 };
 
 
@@ -87,6 +88,7 @@ public:
     ret.uptime[2] = stat1D.reliability;
     ret.uptime[3] = stat1W.reliability;
     ret.uptime[4] = stat1M.reliability;
+    ret.lastSuccess = ourLastSuccess;
     return ret;
   }
   
