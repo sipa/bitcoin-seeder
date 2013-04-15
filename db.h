@@ -12,6 +12,9 @@
 
 #define MIN_RETRY 1000
 
+#define REQUIRE_HEIGHT 230000
+#define REQUIRE_VERSION 40000
+
 std::string static inline ToString(const CService &ip) {
   std::string str = ip.ToString();
   while (str.size() < 22) str += ' ';
@@ -90,7 +93,8 @@ public:
     if (ip.GetPort() != 8333) return false;
     if (!(services & NODE_NETWORK)) return false;
     if (!ip.IsRoutable()) return false;
-    if (clientVersion && clientVersion < 32400) return false;
+    if (clientVersion && clientVersion < REQUIRE_VERSION) return false;
+    if (blocks && blocks < REQUIRE_HEIGHT) return false;
 
     if (total <= 3 && success * 2 >= total) return true;
 
