@@ -53,6 +53,7 @@ public:
   double uptime[5];
   std::string clientSubVersion;
   int64_t lastSuccess;
+  bool fGood;
 };
 
 
@@ -89,6 +90,7 @@ public:
     ret.uptime[3] = stat1W.reliability;
     ret.uptime[4] = stat1M.reliability;
     ret.lastSuccess = ourLastSuccess;
+    ret.fGood = IsGood();
     return ret;
   }
   
