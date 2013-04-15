@@ -12,7 +12,7 @@
 
 #define MIN_RETRY 1000
 
-#define REQUIRE_HEIGHT 140700
+#define REQUIRE_HEIGHT 230000
 #define REQUIRE_VERSION 40000
 
 std::string static inline ToString(const CService &ip) {
