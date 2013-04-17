@@ -397,10 +397,14 @@ int main(int argc, char **argv) {
   pthread_create(&threadSeed, NULL, ThreadSeeder, NULL);
   printf("done\n");
   printf("Starting %i crawler threads...", opts.nThreads);
+  pthread_attr_t attr_crawler;
+  pthread_attr_init(&attr_crawler);
+  pthread_attr_setstacksize(&attr_crawler, 0x20000);
   for (int i=0; i<opts.nThreads; i++) {
     pthread_t thread;
-    pthread_create(&thread, NULL, ThreadCrawler, NULL);
+    pthread_create(&thread, &attr_crawler, ThreadCrawler, NULL);
   }
+  pthread_attr_destroy(&attr_crawler);
   printf("done\n");
   pthread_create(&threadStats, NULL, ThreadStats, NULL);
   pthread_create(&threadDump, NULL, ThreadDumper, NULL);
