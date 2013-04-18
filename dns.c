@@ -430,8 +430,10 @@ int dnsserver(dns_opt_t *opt) {
       if (hdr->cmsg_level == IPPROTO_IP && hdr->cmsg_type == DSTADDR_SOCKOPT)
       {
         msg.msg_iov[0].iov_base = outbuf;
+        msg.msg_iov[0].iov_len = ret;
         sendmsg(listenSocket, &msg, 0);
         msg.msg_iov[0].iov_base = inbuf;
+        msg.msg_iov[0].iov_len = sizeof(inbuf);
         handled = true;
       }
     }
