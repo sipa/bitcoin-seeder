@@ -182,6 +182,7 @@ struct CServiceResult {
     int nHeight;
     int nClientV;
     std::string strClientV;
+    int64 ourLastSuccess;
 };
 
 //             seen nodes
@@ -206,7 +207,7 @@ private:
 protected:
   // internal routines that assume proper locks are acquired
   void Add_(const CAddress &addr, bool force);   // add an address
-  bool Get_(CService &ip, int& wait);      // get an IP to test (must call Good_, Bad_, or Skipped_ on result afterwards)
+  bool Get_(CServiceResult &ip, int& wait);      // get an IP to test (must call Good_, Bad_, or Skipped_ on result afterwards)
   bool GetMany_(std::vector<CServiceResult> &ips, int max, int& wait);
   void Good_(const CService &ip, int clientV, std::string clientSV, int blocks); // mark an IP as good (must have been returned by Get_)
   void Bad_(const CService &ip, int ban);  // mark an IP as bad (and optionally ban it) (must have been returned by Get_)
@@ -318,7 +319,7 @@ public:
     CRITICAL_BLOCK(cs)
       Bad_(addr, ban);
   }
-  bool Get(CService &ip, int& wait) {
+  bool Get(CServiceResult &ip, int& wait) {
     CRITICAL_BLOCK(cs)
       return Get_(ip, wait);
   }
@@ -326,7 +327,7 @@ public:
     CRITICAL_BLOCK(cs) {
       while (max > 0) {
           CServiceResult ip = {};
-          if (!Get_(ip.service, wait))
+          if (!Get_(ip, wait))
               return;
           ips.push_back(ip);
           max--;

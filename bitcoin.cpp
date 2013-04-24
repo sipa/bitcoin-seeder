@@ -87,9 +87,13 @@ class CNode {
  
   void GotVersion() {
     // printf("\n%s: version %i\n", ToString(you).c_str(), nVersion);
-    BeginMessage("getaddr");
-    EndMessage();
-    doneAfter = time(NULL) + GetTimeout();
+    if (vAddr) {
+      BeginMessage("getaddr");
+      EndMessage();
+      doneAfter = time(NULL) + GetTimeout();
+    } else {
+      doneAfter = time(NULL) + 1;
+    }
   }
 
   bool ProcessMessage(string strCommand, CDataStream& vRecv) {
@@ -126,7 +130,7 @@ class CNode {
       return false;
     }
     
-    if (strCommand == "addr") {
+    if (strCommand == "addr" && vAddr) {
       vector<CAddress> vAddrNew;
       vRecv >> vAddrNew;
       // printf("%s: got %i addresses\n", ToString(you).c_str(), (int)vAddrNew.size());
@@ -196,7 +200,7 @@ class CNode {
   }
   
 public:
-  CNode(const CService& ip, vector<CAddress>& vAddrIn) : you(ip), nHeaderStart(-1), nMessageStart(-1), vAddr(&vAddrIn), ban(0), doneAfter(0), nVersion(0) {
+  CNode(const CService& ip, vector<CAddress>* vAddrIn) : you(ip), nHeaderStart(-1), nMessageStart(-1), vAddr(vAddrIn), ban(0), doneAfter(0), nVersion(0) {
     vSend.SetType(SER_NETWORK);
     vSend.SetVersion(0);
     vRecv.SetType(SER_NETWORK);
@@ -270,7 +274,7 @@ public:
   }
 };
 
-bool TestNode(const CService &cip, int &ban, int &clientV, std::string &clientSV, int &blocks, vector<CAddress>& vAddr) {
+bool TestNode(const CService &cip, int &ban, int &clientV, std::string &clientSV, int &blocks, vector<CAddress>* vAddr) {
   try {
     CNode node(cip, vAddr);
     bool ret = node.Run();

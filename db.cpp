@@ -30,7 +30,7 @@ void CAddrInfo::Update(bool good) {
 //  100.0 * stat1W.reliability, 100.0 * (stat1W.reliability + 1.0 - stat1W.weight), stat1W.count);
 }
 
-bool CAddrDb::Get_(CService &ip, int &wait) {
+bool CAddrDb::Get_(CServiceResult &ip, int &wait) {
   int64 now = time(NULL);
   int cont = 0;
   int tot = unkId.size() + ourId.size();
@@ -54,7 +54,8 @@ bool CAddrDb::Get_(CService &ip, int &wait) {
       ourId.push_back(ret);
       idToInfo[ret].ourLastTry = now;
     } else {
-      ip = idToInfo[ret].ip;
+      ip.service = idToInfo[ret].ip;
+      ip.ourLastSuccess = idToInfo[ret].ourLastSuccess;
       break;
     }
   } while(1);

@@ -125,6 +125,7 @@ extern "C" void* ThreadCrawler(void* data) {
     std::vector<CServiceResult> ips;
     int wait = 5;
     db.GetMany(ips, 16, wait);
+    int64 now = time(NULL);
     if (ips.empty()) {
       wait *= 1000;
       wait += rand() % (500 * NTHREADS);
@@ -138,7 +139,8 @@ extern "C" void* ThreadCrawler(void* data) {
       res.nClientV = 0;
       res.nHeight = 0;
       res.strClientV = "";
-      res.fGood = TestNode(res.service,res.nBanTime,res.nClientV,res.strClientV,res.nHeight,addr);
+      bool getaddr = res.ourLastSuccess + 604800 < now;
+      res.fGood = TestNode(res.service,res.nBanTime,res.nClientV,res.strClientV,res.nHeight,getaddr ? &addr : NULL);
     }
     db.ResultMany(ips);
     db.Add(addr);
