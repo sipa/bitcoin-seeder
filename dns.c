@@ -251,8 +251,6 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   if (inbuf[2] & 128) { /* printf("Got response?\n"); */ error = 1; goto error; }
   // check opcode
   if (((inbuf[2] & 120) >> 3) != 0) { /* printf("Opcode nonzero?\n"); */ error = 4; goto error; }
-  // check Z
-  if (((inbuf[3] & 112) >> 4) != 0) { /* printf("Z nonzero?\n"); */ error = 1; goto error; }
   // unset TC
   outbuf[2] &= ~2;
   // unset RA
