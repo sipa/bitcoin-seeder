@@ -1,6 +1,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -267,7 +268,7 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   if (ret == -1) { error = 1; goto error; }
   if (ret == -2) { error = 5; goto error; }
   int namel = strlen(name), hostl = strlen(opt->host);
-  if (strcmp(name, opt->host) && (namel<hostl+2 || name[namel-hostl-1]!='.' || strcmp(name+namel-hostl,opt->host))) { error = 5; goto error; }
+  if (strcasecmp(name, opt->host) && (namel<hostl+2 || name[namel-hostl-1]!='.' || strcasecmp(name+namel-hostl,opt->host))) { error = 5; goto error; }
   if (inend - inpos < 4) { error = 1; goto error; }
   // copy question to output
   memcpy(outbuf+12, inbuf+12, inpos+4 - (inbuf+12));
