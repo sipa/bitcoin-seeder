@@ -15,11 +15,14 @@
 
 using namespace std;
 
+bool fTestNet = false;
+
 class CDnsSeedOpts {
 public:
   int nThreads;
   int nPort;
   int nDnsThreads;
+  int fUseTestNet;
   int fWipeBan;
   int fWipeIgnore;
   const char *mbox;
@@ -41,6 +44,7 @@ public:
                               "-d <threads>    Number of DNS server threads (default 24)\n"
                               "-p <port>       UDP port to listen on (default 53)\n"
                               "-o <ip:port>    Tor proxy IP/Port\n"
+                              "--testnet       Use testnet\n"
                               "--wipeban       Wipe list of banned nodes\n"
                               "--wipeignore    Wipe list of ignored nodes\n"
                               "-?, --help      Show this text\n"
@@ -56,6 +60,7 @@ public:
         {"dnsthreads", required_argument, 0, 'd'},
         {"port", required_argument, 0, 'p'},
         {"onion", required_argument, 0, 'o'},
+        {"testnet", no_argument, &fUseTestNet, 1},
         {"wipeban", no_argument, &fWipeBan, 1},
         {"wipeignore", no_argument, &fWipeBan, 1},
         {"help", no_argument, 0, 'h'},
@@ -335,16 +340,20 @@ extern "C" void* ThreadStats(void*) {
   } while(1);
 }
 
-static const string seeds[] = {"dnsseed.bluematt.me", "bitseed.xf2.org", "dnsseed.bitcoin.dashjr.org", "seed.bitcoin.sipa.be"};
+static const string mainnet_seeds[] = {"dnsseed.bluematt.me", "bitseed.xf2.org", "dnsseed.bitcoin.dashjr.org", "seed.bitcoin.sipa.be", ""};
+static const string testnet_seeds[] = {"testnet-seed.bitcoin.petertodd.org", "static-testnet-seed.bitcoin.petertodd.org", ""};
+static const string *seeds = mainnet_seeds;
 
 extern "C" void* ThreadSeeder(void*) {
-  db.Add(CService("kjy2eqzk4zwi5zd3.onion", 8333), true);
+  if (!fTestNet){
+    db.Add(CService("kjy2eqzk4zwi5zd3.onion", 8333), true);
+  }
   do {
-    for (int i=0; i<sizeof(seeds)/sizeof(seeds[0]); i++) {
+    for (int i=0; seeds[i] != ""; i++) {
       vector<CNetAddr> ips;
       LookupHost(seeds[i].c_str(), ips);
       for (vector<CNetAddr>::iterator it = ips.begin(); it != ips.end(); it++) {
-        db.Add(CService(*it, 8333), true);
+        db.Add(CService(*it, GetDefaultPort()), true);
       }
     }
     Sleep(1800000);
@@ -364,6 +373,15 @@ int main(int argc, char **argv) {
     }
   }
   bool fDNS = true;
+  if (opts.fUseTestNet) {
+      printf("Using testnet.\n");
+      pchMessageStart[0] = 0x0b;
+      pchMessageStart[1] = 0x11;
+      pchMessageStart[2] = 0x09;
+      pchMessageStart[3] = 0x07;
+      seeds = testnet_seeds;
+      fTestNet = true;
+  }
   if (!opts.ns) {
     printf("No nameserver set. Not starting DNS server.\n");
     fDNS = false;
