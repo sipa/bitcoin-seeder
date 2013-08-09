@@ -11,8 +11,6 @@
 #include "bitcoin.h"
 #include "db.h"
 
-#define NTHREADS 24
-
 using namespace std;
 
 bool fTestNet = false;
@@ -40,8 +38,8 @@ public:
                               "-h <host>       Hostname of the DNS seed\n"
                               "-n <ns>         Hostname of the nameserver\n"
                               "-m <mbox>       E-Mail address reported in SOA records\n"
-                              "-t <threads>    Number of crawlers to run in parallel (default 24)\n"
-                              "-d <threads>    Number of DNS server threads (default 24)\n"
+                              "-t <threads>    Number of crawlers to run in parallel (default 96)\n"
+                              "-d <threads>    Number of DNS server threads (default 4)\n"
                               "-p <port>       UDP port to listen on (default 53)\n"
                               "-o <ip:port>    Tor proxy IP/Port\n"
                               "--testnet       Use testnet\n"
@@ -126,6 +124,7 @@ extern "C" {
 CAddrDb db;
 
 extern "C" void* ThreadCrawler(void* data) {
+  int *nThreads=(int*)data;
   do {
     std::vector<CServiceResult> ips;
     int wait = 5;
@@ -133,7 +132,7 @@ extern "C" void* ThreadCrawler(void* data) {
     int64 now = time(NULL);
     if (ips.empty()) {
       wait *= 1000;
-      wait += rand() % (500 * NTHREADS);
+      wait += rand() % (500 * *nThreads);
       Sleep(wait);
       continue;
     }
@@ -422,7 +421,7 @@ int main(int argc, char **argv) {
   pthread_attr_setstacksize(&attr_crawler, 0x20000);
   for (int i=0; i<opts.nThreads; i++) {
     pthread_t thread;
-    pthread_create(&thread, &attr_crawler, ThreadCrawler, NULL);
+    pthread_create(&thread, &attr_crawler, ThreadCrawler, &opts.nThreads);
   }
   pthread_attr_destroy(&attr_crawler);
   printf("done\n");
