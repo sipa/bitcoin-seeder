@@ -12,8 +12,12 @@
 
 #define MIN_RETRY 1000
 
-#define REQUIRE_HEIGHT 230000
 #define REQUIRE_VERSION 40000
+
+static inline int GetRequireHeight(const bool testnet = fTestNet)
+{
+    return testnet ? 0 : 230000;
+}
 
 std::string static inline ToString(const CService &ip) {
   std::string str = ip.ToString();
@@ -101,7 +105,7 @@ public:
     if (!(services & NODE_NETWORK)) return false;
     if (!ip.IsRoutable()) return false;
     if (clientVersion && clientVersion < REQUIRE_VERSION) return false;
-    if (blocks && blocks < REQUIRE_HEIGHT) return false;
+    if (blocks && blocks < GetRequireHeight()) return false;
 
     if (total <= 3 && success * 2 >= total) return true;
 
