@@ -1,0 +1,3 @@
+*.o
+dnsseed*
+dnsstats.log
