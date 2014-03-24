@@ -26,6 +26,9 @@
 #endif
 
 typedef u_int SOCKET;
+#ifdef __APPLE__
+#define MSG_NOSIGNAL        0
+#endif
 #ifdef WIN32
 #define MSG_NOSIGNAL        0
 #define MSG_DONTWAIT        0
