@@ -11,9 +11,26 @@
 #include "bitcoin.h"
 #include "db.h"
 
+#define ANSI_COLOR_RED     "\x1b[31m"
+#define ANSI_COLOR_GREEN   "\x1b[32m"
+#define ANSI_COLOR_YELLOW  "\x1b[33m"
+#define ANSI_COLOR_BLUE    "\x1b[34m"
+#define ANSI_COLOR_MAGENTA "\x1b[35m"
+#define ANSI_COLOR_CYAN    "\x1b[36m"
+#define ANSI_COLOR_RESET   "\x1b[0m"
+
 using namespace std;
 
 bool fTestNet = false;
+int fQuiet = 0;
+
+inline void log_printf(const char* fmt, ...) {
+  if (fQuiet) return;
+  va_list argp;
+  va_start(argp, fmt);
+  vprintf(fmt, argp);
+  va_end(argp);
+}
 
 class CDnsSeedOpts {
 public:
@@ -31,7 +48,7 @@ public:
   CDnsSeedOpts() : nThreads(96), nDnsThreads(4), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false) {}
 
   void ParseCommandLine(int argc, char **argv) {
-    static const char *help = "Bitcoin-seeder\n"
+    static const char *help = "dnsseed\n"
                               "Usage: %s -h <host> -n <ns> [-m <mbox>] [-t <threads>] [-p <port>]\n"
                               "\n"
                               "Options:\n"
@@ -45,6 +62,7 @@ public:
                               "--testnet       Use testnet\n"
                               "--wipeban       Wipe list of banned nodes\n"
                               "--wipeignore    Wipe list of ignored nodes\n"
+                              "--quiet         Don't print stats\n"
                               "-?, --help      Show this text\n"
                               "\n";
     bool showHelp = false;
@@ -61,7 +79,8 @@ public:
         {"testnet", no_argument, &fUseTestNet, 1},
         {"wipeban", no_argument, &fWipeBan, 1},
         {"wipeignore", no_argument, &fWipeBan, 1},
-        {"help", no_argument, 0, 'h'},
+        {"quiet", no_argument, &fQuiet, 1},
+        {"help", no_argument, 0, 'H'},
         {0, 0, 0, 0}
       };
       int option_index = 0;
@@ -106,14 +125,19 @@ public:
           break;
         }
 
-        case '?': {
+        case 'H': case '?': {
           showHelp = true;
           break;
         }
+
+        default:
+          break;
       }
     }
-    if (host != NULL && ns == NULL) showHelp = true;
-    if (showHelp) fprintf(stderr, help, argv[0]);
+    if ((host == NULL && ns != NULL) || showHelp) {
+      fprintf(stderr, help, argv[0]);
+      exit(0);
+    }
   }
 };
 
@@ -320,21 +344,22 @@ extern "C" void* ThreadStats(void*) {
     strftime(c, 256, "[%y-%m-%d %H:%M:%S]", tmp);
     CAddrDbStats stats;
     db.GetStats(stats);
-    if (first)
-    {
-      first = false;
-      printf("\n\n\n\x1b[3A");
-    }
-    else
-      printf("\x1b[2K\x1b[u");
-    printf("\x1b[s");
+
     uint64_t requests = 0;
     uint64_t queries = 0;
     for (unsigned int i=0; i<dnsThread.size(); i++) {
       requests += dnsThread[i]->dns_opt.nRequests;
       queries += dnsThread[i]->dbQueries;
     }
-    printf("%s %i/%i available (%i tried in %is, %i new, %i active), %i banned; %llu DNS requests, %llu db queries", c, stats.nGood, stats.nAvail, stats.nTracked, stats.nAge, stats.nNew, stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned, (unsigned long long)requests, (unsigned long long)queries);
+
+    log_printf(first ? "\n" : "\r");
+    if (first) first = false;
+    log_printf(ANSI_COLOR_GREEN "%s" ANSI_COLOR_RESET " " ANSI_COLOR_CYAN "%i/%i" ANSI_COLOR_RESET
+               " available (%i tried in %is, %i new, %i active), %i banned; "
+               ANSI_COLOR_CYAN "%llu"  ANSI_COLOR_RESET " DNS requests, %llu db queries",
+               c, stats.nGood, stats.nAvail, stats.nTracked, stats.nAge, stats.nNew,
+               stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned,
+               (unsigned long long)requests, (unsigned long long)queries);
     Sleep(1000);
   } while(1);
 }
@@ -367,13 +392,13 @@ int main(int argc, char **argv) {
   if (opts.tor) {
     CService service(opts.tor, 9050);
     if (service.IsValid()) {
-      printf("Using Tor proxy at %s\n", service.ToStringIPPort().c_str());
+      log_printf("Using Tor proxy at %s\n", service.ToStringIPPort().c_str());
       SetProxy(NET_TOR, service);
     }
   }
   bool fDNS = true;
   if (opts.fUseTestNet) {
-      printf("Using testnet.\n");
+      log_printf("Using testnet.\n");
       pchMessageStart[0] = 0x0b;
       pchMessageStart[1] = 0x11;
       pchMessageStart[2] = 0x09;
@@ -382,7 +407,7 @@ int main(int argc, char **argv) {
       fTestNet = true;
   }
   if (!opts.ns) {
-    printf("No nameserver set. Not starting DNS server.\n");
+    log_printf("No nameserver set. Not starting DNS server.\n");
     fDNS = false;
   }
   if (fDNS && !opts.host) {
@@ -391,31 +416,32 @@ int main(int argc, char **argv) {
   }
   FILE *f = fopen("dnsseed.dat","r");
   if (f) {
-    printf("Loading dnsseed.dat...");
+    log_printf("Loading dnsseed.dat...");
     CAutoFile cf(f);
     cf >> db;
     if (opts.fWipeBan)
         db.banned.clear();
     if (opts.fWipeIgnore)
         db.ResetIgnores();
-    printf("done\n");
+    log_printf("done\n");
   }
   pthread_t threadDns, threadSeed, threadDump, threadStats;
   if (fDNS) {
-    printf("Starting %i DNS threads for %s on %s (port %i)...", opts.nDnsThreads, opts.host, opts.ns, opts.nPort);
+    log_printf("Starting %i DNS threads for %s on %s (port %i)...", opts.nDnsThreads, opts.host, opts.ns, opts.nPort);
     dnsThread.clear();
     for (int i=0; i<opts.nDnsThreads; i++) {
       dnsThread.push_back(new CDnsThread(&opts, i));
       pthread_create(&threadDns, NULL, ThreadDNS, dnsThread[i]);
-      printf(".");
+      log_printf(".");
       Sleep(20);
     }
-    printf("done\n");
+    log_printf("done\n");
   }
-  printf("Starting seeder...");
+  log_printf("Starting seeder...");
   pthread_create(&threadSeed, NULL, ThreadSeeder, NULL);
-  printf("done\n");
-  printf("Starting %i crawler threads...", opts.nThreads);
+  log_printf("done\n");
+  log_printf("Starting %i crawler threads...", opts.nThreads);
+
   pthread_attr_t attr_crawler;
   pthread_attr_init(&attr_crawler);
   pthread_attr_setstacksize(&attr_crawler, 0x20000);
@@ -424,7 +450,7 @@ int main(int argc, char **argv) {
     pthread_create(&thread, &attr_crawler, ThreadCrawler, &opts.nThreads);
   }
   pthread_attr_destroy(&attr_crawler);
-  printf("done\n");
+  log_printf("done\n");
   pthread_create(&threadStats, NULL, ThreadStats, NULL);
   pthread_create(&threadDump, NULL, ThreadDumper, NULL);
   void* res;
