@@ -364,8 +364,22 @@ extern "C" void* ThreadStats(void*) {
   } while(1);
 }
 
-static const string mainnet_seeds[] = {"dnsseed.bluematt.me", "bitseed.xf2.org", "dnsseed.bitcoin.dashjr.org", "seed.bitcoin.sipa.be", ""};
-static const string testnet_seeds[] = {"testnet-seed.bitcoin.petertodd.org", "static-testnet-seed.bitcoin.petertodd.org", ""};
+static const string mainnet_seeds[] = {
+  "dnsseed.bluematt.me",
+  "bitseed.xf2.org",
+  "dnsseed.bitcoin.dashjr.org",
+  "seed.bitcoin.sipa.be",
+  "seed.bitcoinstats.com",
+  "seed.bitnodes.io",
+  "seeds.bitcoin.open-nodes.org",
+  ""
+};
+static const string testnet_seeds[] = {
+  "testnet-seed.bitcoin.petertodd.org",
+  "testnet-seed.bluematt.me",
+  "testnet-seed.alexykot.me",
+  ""
+};
 static const string *seeds = mainnet_seeds;
 
 extern "C" void* ThreadSeeder(void*) {
