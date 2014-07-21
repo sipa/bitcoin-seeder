@@ -188,14 +188,12 @@ public:
           memcpy(&a.data.v4, &addr, 4);
           cache.push_back(a);
           nIPv4++;
-#ifdef USE_IPV6
         } else if ((*it).GetIn6Addr(&addr6)) {
           addr_t a;
           a.v = 6;
           memcpy(&a.data.v6, &addr6, 16);
           cache.push_back(a);
           nIPv6++;
-#endif
         }
       }
       cacheHits = 0;
