@@ -83,9 +83,9 @@ int static parse_name(const unsigned char **inpos, const unsigned char *inend, c
       if (*inpos == inend)
         return -1;
       int ref = ((octet - 0xC0) << 8) + *((*inpos)++);
-      if (ref < 0 || ref >= (*inpos)-inbuf) return -1;
+      if (ref < 0 || ref >= (*inpos)-inbuf-2) return -1;
       const unsigned char *newbuf = inbuf + ref;
-      return parse_name(&newbuf, *inpos, inbuf, buf+bufused, bufsize-bufused);
+      return parse_name(&newbuf, (*inpos) - 2, inbuf, buf+bufused, bufsize-bufused);
     }
     if (octet > 63) return -1;
     // copy label
