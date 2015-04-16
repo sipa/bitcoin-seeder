@@ -23,12 +23,13 @@ public:
   int fUseTestNet;
   int fWipeBan;
   int fWipeIgnore;
+  int fUseXor;
   const char *mbox;
   const char *ns;
   const char *host;
   const char *tor;
 
-  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false) {}
+  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false), fUseXor(false) {}
 
   void ParseCommandLine(int argc, char **argv) {
     static const char *help = "Bitcoin-seeder\n"
@@ -45,6 +46,7 @@ public:
                               "--testnet       Use testnet\n"
                               "--wipeban       Wipe list of banned nodes\n"
                               "--wipeignore    Wipe list of ignored nodes\n"
+                              "--usexor        XORing output\n"
                               "-?, --help      Show this text\n"
                               "\n";
     bool showHelp = false;
@@ -61,6 +63,7 @@ public:
         {"testnet", no_argument, &fUseTestNet, 1},
         {"wipeban", no_argument, &fWipeBan, 1},
         {"wipeignore", no_argument, &fWipeBan, 1},
+        {"usexor", no_argument, &fUseXor, 1},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
       };
@@ -212,6 +215,7 @@ public:
     dns_opt.cb = GetIPList;
     dns_opt.port = opts->nPort;
     dns_opt.nRequests = 0;
+    dns_opt.useXor = opts->fUseXor;
     cache.clear();
     cache.reserve(1000);
     cacheTime = 0;
@@ -402,7 +406,7 @@ int main(int argc, char **argv) {
   }
   pthread_t threadDns, threadSeed, threadDump, threadStats;
   if (fDNS) {
-    printf("Starting %i DNS threads for %s on %s (port %i)...", opts.nDnsThreads, opts.host, opts.ns, opts.nPort);
+    printf("Starting %i DNS threads for %s on %s (port %i, useXor: %i)...", opts.nDnsThreads, opts.host, opts.ns, opts.nPort, opts.fUseXor);
     dnsThread.clear();
     for (int i=0; i<opts.nDnsThreads; i++) {
       dnsThread.push_back(new CDnsThread(&opts, i));

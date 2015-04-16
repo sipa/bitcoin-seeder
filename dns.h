@@ -21,6 +21,7 @@ typedef struct {
   int (*cb)(void *opt, addr_t *addr, int max, int ipv4, int ipv6);
   // stats
   uint64_t nRequests;
+  int useXor;
 } dns_opt_t;
 
 extern int dnsserver(dns_opt_t *opt);
