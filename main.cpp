@@ -46,7 +46,7 @@ public:
                               "--testnet       Use testnet\n"
                               "--wipeban       Wipe list of banned nodes\n"
                               "--wipeignore    Wipe list of ignored nodes\n"
-                              "--usexor        XORing output\n"
+                              "--usexor        XORing output when querying x.<host>\n"
                               "-?, --help      Show this text\n"
                               "\n";
     bool showHelp = false;

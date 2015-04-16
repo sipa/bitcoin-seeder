@@ -237,6 +237,7 @@ error:
 }
 
 ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insize, unsigned char* outbuf) {
+  bool xored = false;
   int error = 0;
   if (insize < 12) // DNS header
     return -1;
@@ -269,6 +270,8 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   if (ret == -2) { error = 5; goto error; }
   int namel = strlen(name), hostl = strlen(opt->host);
   if (strcasecmp(name, opt->host) && (namel<hostl+2 || name[namel-hostl-1]!='.' || strcasecmp(name+namel-hostl,opt->host))) { error = 5; goto error; }
+  if (opt->useXor && ((name[0] == 'x' && name[2] == '.') || (name[0] == 'x' && name[1] == '.'))) {
+    xored = true; }
   if (inend - inpos < 4) { error = 1; goto error; }
   // copy question to output
   memcpy(outbuf+12, inbuf+12, inpos+4 - (inbuf+12));
@@ -324,27 +327,23 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
     addr_t addr[32];
     int naddr = opt->cb((void*)opt, addr, 32, typ == TYPE_A || typ == QTYPE_ANY, typ == TYPE_AAAA || typ == QTYPE_ANY);
     int n = 0;
-    unsigned char xorKey[6] = {0xF, 0xA, 0x9, 0xC, 0xF, 0xB};
+    unsigned char xorKey[16] = {0xF, 0xA, 0x9, 0xC, 0xF, 0xB, 0x1, 0x9, 0x9, 0xA, 0xC, 0x5, 0xA, 0xB, 0xF, 0xF};
     while (n < naddr) {
       int ret = 1;
       if (addr[n].v == 4) {
-        if (opt->useXor == 1) {
-          unsigned char IPXORed[4];
+        if (xored) {
           for (int i=0; i<4; i++) {
-            IPXORed[i]=addr[n].data.v4[i]^xorKey[i];
+            addr[n].data.v4[i]=addr[n].data.v4[i]^xorKey[i];
           }
-          memcpy(addr[n].data.v4,IPXORed, 4);
         }
         ret = write_record_a(&outpos, outend - auth_size, "", offset, CLASS_IN, opt->datattl, &addr[n]);
       }
       else if (addr[n].v == 6) {
-        if (opt->useXor == 1)
+        if (xored)
         {
-          unsigned char IPXORed[16];
           for (int i=0; i<16; i++) {
-            IPXORed[i]=addr[n].data.v6[i]^xorKey[i];
+            addr[n].data.v6[i]=addr[n].data.v6[i]^xorKey[i];
           }
-          memcpy(addr[n].data.v6,IPXORed, 16);
         }
         ret = write_record_aaaa(&outpos, outend - auth_size, "", offset, CLASS_IN, opt->datattl, &addr[n]);
 //      printf("wrote A record: %i\n", ret);
