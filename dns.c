@@ -287,18 +287,23 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   unsigned char *outpos = outbuf+(inpos-inbuf);
   unsigned char *outend = outbuf + BUFLEN;
   
-  // printf("DNS: Request host='%s' type=%i class=%i\n", name, typ, cls);
+//   printf("DNS: Request host='%s' type=%i class=%i\n", name, typ, cls);
   
-  // calculate size of authority section
+  // calculate max size of authority section
   
-  int auth_size = 0;
+  int max_auth_size = 0;
   
   if (!((typ == TYPE_NS || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY))) {
-    // authority section will be necessary
-    unsigned char *oldpos = outpos;
-    write_record_ns(&oldpos, outend, "", offset, CLASS_IN, 0, opt->ns);
-    auth_size = oldpos - outpos;
-//    printf("Authority section will claim %i bytes\n", auth_size);
+    // authority section will be necessary, either NS or SOA
+    unsigned char *newpos = outpos;
+    write_record_ns(&newpos, outend, "", offset, CLASS_IN, 0, opt->ns);
+    max_auth_size = newpos - outpos;
+
+    newpos = outpos;
+    write_record_soa(&newpos, outend, "", offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), 604800, 86400, 2592000, 604800);
+    if (max_auth_size < newpos - outpos)
+        max_auth_size = newpos - outpos;
+//    printf("Authority section will claim %i bytes max\n", max_auth_size);
   }
   
   // Answer section
@@ -307,14 +312,14 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
 
   // NS records
   if ((typ == TYPE_NS || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY)) {
-    int ret2 = write_record_ns(&outpos, outend - auth_size, "", offset, CLASS_IN, opt->nsttl, opt->ns);
+    int ret2 = write_record_ns(&outpos, outend - max_auth_size, "", offset, CLASS_IN, opt->nsttl, opt->ns);
 //    printf("wrote NS record: %i\n", ret2);
     if (!ret2) { outbuf[7]++; have_ns++; }
   }
 
   // SOA records
   if ((typ == TYPE_SOA || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY) && opt->mbox) {
-    int ret2 = write_record_soa(&outpos, outend - auth_size, "", offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), 604800, 86400, 2592000, 604800);
+    int ret2 = write_record_soa(&outpos, outend - max_auth_size, "", offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), 604800, 86400, 2592000, 604800);
 //    printf("wrote SOA record: %i\n", ret2);
     if (!ret2) { outbuf[7]++; }
   }
@@ -327,9 +332,9 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
     while (n < naddr) {
       int ret = 1;
       if (addr[n].v == 4)
-         ret = write_record_a(&outpos, outend - auth_size, "", offset, CLASS_IN, opt->datattl, &addr[n]);
+         ret = write_record_a(&outpos, outend - max_auth_size, "", offset, CLASS_IN, opt->datattl, &addr[n]);
       else if (addr[n].v == 6)
-         ret = write_record_aaaa(&outpos, outend - auth_size, "", offset, CLASS_IN, opt->datattl, &addr[n]);
+         ret = write_record_aaaa(&outpos, outend - max_auth_size, "", offset, CLASS_IN, opt->datattl, &addr[n]);
 //      printf("wrote A record: %i\n", ret);
       if (!ret) {
         n++;
@@ -340,12 +345,21 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   }
   
   // Authority section
-  if (!have_ns) {
+  if (!have_ns && outbuf[7]) {
     int ret2 = write_record_ns(&outpos, outend, "", offset, CLASS_IN, opt->nsttl, opt->ns);
 //    printf("wrote NS record: %i\n", ret2);
     if (!ret2) {
       outbuf[9]++;
     }
+  }
+  else if (!outbuf[7]) {
+    // Didn't include any answers, so reply with SOA as this is a negative
+    // response. If we replied with NS above we'd create a bad horizontal
+    // referral loop, as the NS response indicates where the resolver should
+    // try next.
+    int ret2 = write_record_soa(&outpos, outend, "", offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), 604800, 86400, 2592000, 604800);
+//    printf("wrote SOA record: %i\n", ret2);
+    if (!ret2) { outbuf[9]++; }
   }
   
   // set AA
