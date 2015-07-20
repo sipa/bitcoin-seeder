@@ -27,6 +27,7 @@ public:
   const char *ns;
   const char *host;
   const char *tor;
+  const char *ipv4_proxy;
 
   CDnsSeedOpts() : nThreads(96), nDnsThreads(4), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false) {}
 
@@ -42,6 +43,7 @@ public:
                               "-d <threads>    Number of DNS server threads (default 4)\n"
                               "-p <port>       UDP port to listen on (default 53)\n"
                               "-o <ip:port>    Tor proxy IP/Port\n"
+                              "-i <ip:port>    IPV4 proxy IP/Port\n"
                               "--testnet       Use testnet\n"
                               "--wipeban       Wipe list of banned nodes\n"
                               "--wipeignore    Wipe list of ignored nodes\n"
@@ -58,6 +60,7 @@ public:
         {"dnsthreads", required_argument, 0, 'd'},
         {"port", required_argument, 0, 'p'},
         {"onion", required_argument, 0, 'o'},
+        {"proxy", required_argument, 0, 'i'},
         {"testnet", no_argument, &fUseTestNet, 1},
         {"wipeban", no_argument, &fWipeBan, 1},
         {"wipeignore", no_argument, &fWipeBan, 1},
@@ -65,7 +68,7 @@ public:
         {0, 0, 0, 0}
       };
       int option_index = 0;
-      int c = getopt_long(argc, argv, "h:n:m:t:p:d:o:", long_options, &option_index);
+      int c = getopt_long(argc, argv, "h:n:m:t:p:d:o:i:", long_options, &option_index);
       if (c == -1) break;
       switch (c) {
         case 'h': {
@@ -103,6 +106,11 @@ public:
         
         case 'o': {
           tor = optarg;
+          break;
+        }
+        
+        case 'i': {
+          ipv4_proxy = optarg;
           break;
         }
 
@@ -369,6 +377,13 @@ int main(int argc, char **argv) {
     if (service.IsValid()) {
       printf("Using Tor proxy at %s\n", service.ToStringIPPort().c_str());
       SetProxy(NET_TOR, service);
+    }
+  }
+  if (opts.ipv4_proxy) {
+    CService service(opts.ipv4_proxy, 9050);
+    if (service.IsValid()) {
+      printf("Using IPv4 proxy at %s\n", service.ToStringIPPort().c_str());
+      SetProxy(NET_IPV4, service);
     }
   }
   bool fDNS = true;
