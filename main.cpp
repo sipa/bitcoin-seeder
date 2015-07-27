@@ -44,8 +44,8 @@ public:
                               "-d <threads>    Number of DNS server threads (default 4)\n"
                               "-p <port>       UDP port to listen on (default 53)\n"
                               "-o <ip:port>    Tor proxy IP/Port\n"
-                              "-i <ip:port>    IPV4 proxy IP/Port\n"
-                              "-k <ip:port>    IPV6 proxy IP/Port\n"
+                              "-i <ip:port>    IPV4 SOCKS5 proxy IP/Port\n"
+                              "-k <ip:port>    IPV6 SOCKS5 proxy IP/Port\n"
                               "--testnet       Use testnet\n"
                               "--wipeban       Wipe list of banned nodes\n"
                               "--wipeignore    Wipe list of ignored nodes\n"
@@ -63,7 +63,7 @@ public:
         {"port", required_argument, 0, 'p'},
         {"onion", required_argument, 0, 'o'},
         {"proxyipv4", required_argument, 0, 'i'},
-        {"proxyipv6", required_argument, 0, 'ik'},
+        {"proxyipv6", required_argument, 0, 'k'},
         {"testnet", no_argument, &fUseTestNet, 1},
         {"wipeban", no_argument, &fWipeBan, 1},
         {"wipeignore", no_argument, &fWipeBan, 1},
