@@ -223,7 +223,7 @@ public:
     dns_opt.host = opts->host;
     dns_opt.ns = opts->ns;
     dns_opt.mbox = opts->mbox;
-    dns_opt.datattl = 60;
+    dns_opt.datattl = 3600;
     dns_opt.nsttl = 40000;
     dns_opt.cb = GetIPList;
     dns_opt.port = opts->nPort;
