@@ -421,6 +421,10 @@ int main(int argc, char **argv) {
     fprintf(stderr, "No hostname set. Please use -h.\n");
     exit(1);
   }
+  if (fDNS && !opts.mbox) {
+    fprintf(stderr, "No e-mail address set. Please use -m.\n");
+    exit(1);
+  }
   FILE *f = fopen("dnsseed.dat","r");
   if (f) {
     printf("Loading dnsseed.dat...");
