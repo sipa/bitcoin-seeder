@@ -13,6 +13,7 @@
 #define MIN_RETRY 1000
 
 #define REQUIRE_VERSION 70001
+#define NO_BLOOM_VERSION 70011 // BIP111, NODE_BLOOM supported
 
 static inline int GetRequireHeight(const bool testnet = fTestNet)
 {
@@ -102,7 +103,13 @@ public:
   
   bool IsGood() const {
     if (ip.GetPort() != GetDefaultPort()) return false;
-    if (!(services & NODE_NETWORK)) return false;
+    if (clientVersion < NO_BLOOM_VERSION) {
+        if (!(services & NODE_NETWORK)) return false;
+    } else {
+        if ((services & (NODE_NETWORK | NODE_BLOOM))
+                     != (NODE_NETWORK | NODE_BLOOM))
+            return false;
+    }
     if (!ip.IsRoutable()) return false;
     if (clientVersion && clientVersion < REQUIRE_VERSION) return false;
     if (blocks && blocks < GetRequireHeight()) return false;
