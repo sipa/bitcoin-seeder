@@ -166,7 +166,7 @@ void CAddrDb::Add_(const CAddress &addr, bool force) {
   nDirty++;
 }
 
-void CAddrDb::GetIPs_(set<CNetAddr>& ips, int max, const bool* nets) {
+void CAddrDb::GetIPs_(set<CNetAddr>& ips, uint64_t requestedFlags, int max, const bool* nets) {
   if (goodId.size() == 0) {
     int id = -1;
     if (ourId.size() == 0) {
@@ -175,22 +175,31 @@ void CAddrDb::GetIPs_(set<CNetAddr>& ips, int max, const bool* nets) {
     } else {
       id = *ourId.begin();
     }
-    if (id >= 0) {
+    if (id >= 0 && idToInfo[id].services & requestedFlags) {
       ips.insert(idToInfo[id].ip);
     }
     return;
   }
-  if (max > goodId.size() / 2)
-    max = goodId.size() / 2;
+  std::set<int> goodIdFiltered;
+  for (std::set<int>::const_iterator it = goodId.begin(); it != goodId.end(); it++) {
+    if ((idToInfo[*it].services & requestedFlags) == requestedFlags)
+      goodIdFiltered.insert(*it);
+  }
+
+  if (!goodIdFiltered.size())
+    return;
+
+  if (max > goodIdFiltered.size() / 2)
+    max = goodIdFiltered.size() / 2;
   if (max < 1)
     max = 1;
-  int low = *goodId.begin();
-  int high = *goodId.rbegin();
+  int low = *goodIdFiltered.begin();
+  int high = *goodIdFiltered.rbegin();
   set<int> ids;
   while (ids.size() < max) {
     int range = high-low+1;
     int pos = low + (rand() % range);
-    int id = *(goodId.lower_bound(pos));
+    int id = *(goodIdFiltered.lower_bound(pos));
     ids.insert(id);
   }
   for (set<int>::const_iterator it = ids.begin(); it != ids.end(); it++) {
