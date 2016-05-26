@@ -36,7 +36,7 @@ On the system vps.example.com, you can now run dnsseed:
 ./dnsseed -h dnsseed.example.com -n vps.example.com
 
 If you want the DNS server to report SOA records, please provide an
-e-mailadres (with the @ part replaced by .) using -m.
+e-mail address (with the @ part replaced by .) using -m.
 
 COMPILING
 ---------
