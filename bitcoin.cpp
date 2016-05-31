@@ -26,9 +26,9 @@ class CNode {
 
   int GetTimeout() {
       if (you.IsTor())
-          return 60;
+          return 120;
       else
-          return 10;
+          return 30;
   }
 
   void BeginMessage(const char *pszCommand) {
