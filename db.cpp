@@ -180,10 +180,10 @@ void CAddrDb::GetIPs_(set<CNetAddr>& ips, uint64_t requestedFlags, int max, cons
     }
     return;
   }
-  std::set<int> goodIdFiltered;
+  std::vector<int> goodIdFiltered;
   for (std::set<int>::const_iterator it = goodId.begin(); it != goodId.end(); it++) {
     if ((idToInfo[*it].services & requestedFlags) == requestedFlags)
-      goodIdFiltered.insert(*it);
+      goodIdFiltered.push_back(*it);
   }
 
   if (!goodIdFiltered.size())
@@ -193,14 +193,10 @@ void CAddrDb::GetIPs_(set<CNetAddr>& ips, uint64_t requestedFlags, int max, cons
     max = goodIdFiltered.size() / 2;
   if (max < 1)
     max = 1;
-  int low = *goodIdFiltered.begin();
-  int high = *goodIdFiltered.rbegin();
+
   set<int> ids;
   while (ids.size() < max) {
-    int range = high-low+1;
-    int pos = low + (rand() % range);
-    int id = *(goodIdFiltered.lower_bound(pos));
-    ids.insert(id);
+    ids.insert(goodIdFiltered[rand() % goodIdFiltered.size()]);
   }
   for (set<int>::const_iterator it = ids.begin(); it != ids.end(); it++) {
     CService &ip = idToInfo[*it].ip;
