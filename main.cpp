@@ -15,6 +15,17 @@ using namespace std;
 
 bool fTestNet = false;
 
+uint64_t filter_whitelist[] = {
+  0x0000000000000001,
+  0x0000000000000003,
+  0x0000000000000005,
+  0x0000000000000007,
+  0x0000000000000009,
+  0x000000000000000B,
+  0x000000000000000D,
+  0x000000000000000F,
+};
+
 class CDnsSeedOpts {
 public:
   int nThreads;
@@ -175,9 +186,10 @@ public:
   const int id;
   std::map<uint64_t, vector<addr_t> > cache;
   int nIPv4, nIPv6;
-  time_t cacheTime;
+  std::map<uint64_t, time_t> cacheTime;
   unsigned int cacheHits;
   uint64_t dbQueries;
+  std::vector<uint64_t> filterWhitelist;
 
   void cacheHit(uint64_t requestedFlags, bool force = false) {
     static bool nets[NET_MAX] = {};
@@ -187,7 +199,7 @@ public:
     }
     time_t now = time(NULL);
     cacheHits++;
-    if (force || cacheHits > (cache[requestedFlags].size()*cache[requestedFlags].size()/400) || (cacheHits*cacheHits > cache[requestedFlags].size() / 20 && (now - cacheTime > 5))) {
+    if (force || cacheHits > (cache[requestedFlags].size()*cache[requestedFlags].size()/400) || (cacheHits*cacheHits > cache[requestedFlags].size() / 20 && (now - cacheTime[requestedFlags] > 5))) {
       set<CNetAddr> ips;
       db.GetIPs(ips, requestedFlags, 1000, nets);
       dbQueries++;
@@ -213,7 +225,7 @@ public:
         }
       }
       cacheHits = 0;
-      cacheTime = now;
+      cacheTime[requestedFlags] = now;
     }
   }
 
@@ -227,11 +239,12 @@ public:
     dns_opt.port = opts->nPort;
     dns_opt.nRequests = 0;
     cache.clear();
-    cacheTime = 0;
+    cacheTime.clear();
     cacheHits = 0;
     dbQueries = 0;
     nIPv4 = 0;
     nIPv6 = 0;
+    filterWhitelist = std::vector<uint64_t>(filter_whitelist, filter_whitelist + (sizeof filter_whitelist / sizeof filter_whitelist[0]));
   }
 
   void run() {
@@ -247,9 +260,13 @@ extern "C" int GetIPList(void *data, char *requestedHostname, addr_t* addr, int 
   if (hostlen > 1 && requestedHostname[0] == 'x' && requestedHostname[1] != '0') {
     char *pEnd;
     uint64_t flags = (uint64_t)strtoull(requestedHostname+1, &pEnd, 16);
-    if (*pEnd == '.' && pEnd <= requestedHostname+17)
+    if (*pEnd == '.' && pEnd <= requestedHostname+17 && std::find(thread->filterWhitelist.begin(), thread->filterWhitelist.end(), flags) != thread->filterWhitelist.end())
       requestedFlags = flags;
+    else
+      return 0;
   }
+  else if (strcasecmp(requestedHostname, thread->dns_opt.host))
+    return 0;
   thread->cacheHit(requestedFlags);
   unsigned int size = thread->cache[requestedFlags].size();
   unsigned int maxmax = (ipv4 ? thread->nIPv4 : 0) + (ipv6 ? thread->nIPv6 : 0);
