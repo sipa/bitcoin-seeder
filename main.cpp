@@ -15,6 +15,17 @@ using namespace std;
 
 bool fTestNet = false;
 
+uint64_t filter_whitelist[] = {
+  0x0000000000000001,
+  0x0000000000000003,
+  0x0000000000000005,
+  0x0000000000000007,
+  0x0000000000000009,
+  0x000000000000000B,
+  0x000000000000000D,
+  0x000000000000000F,
+};
+
 class CDnsSeedOpts {
 public:
   int nThreads;
@@ -167,19 +178,20 @@ extern "C" void* ThreadCrawler(void* data) {
   } while(1);
 }
 
-extern "C" int GetIPList(void *thread, addr_t *addr, int max, int ipv4, int ipv6);
+extern "C" int GetIPList(void *thread, char *requestedHostname, addr_t *addr, int max, int ipv4, int ipv6);
 
 class CDnsThread {
 public:
   dns_opt_t dns_opt; // must be first
   const int id;
-  vector<addr_t> cache;
+  std::map<uint64_t, vector<addr_t> > cache;
   int nIPv4, nIPv6;
-  time_t cacheTime;
+  std::map<uint64_t, time_t> cacheTime;
   unsigned int cacheHits;
   uint64_t dbQueries;
+  std::vector<uint64_t> filterWhitelist;
 
-  void cacheHit(bool force = false) {
+  void cacheHit(uint64_t requestedFlags, bool force = false) {
     static bool nets[NET_MAX] = {};
     if (!nets[NET_IPV4]) {
         nets[NET_IPV4] = true;
@@ -187,14 +199,14 @@ public:
     }
     time_t now = time(NULL);
     cacheHits++;
-    if (force || cacheHits > (cache.size()*cache.size()/400) || (cacheHits*cacheHits > cache.size() / 20 && (now - cacheTime > 5))) {
+    if (force || cacheHits > (cache[requestedFlags].size()*cache[requestedFlags].size()/400) || (cacheHits*cacheHits > cache[requestedFlags].size() / 20 && (now - cacheTime[requestedFlags] > 5))) {
       set<CNetAddr> ips;
-      db.GetIPs(ips, 1000, nets);
+      db.GetIPs(ips, requestedFlags, 1000, nets);
       dbQueries++;
-      cache.clear();
+      cache[requestedFlags].clear();
       nIPv4 = 0;
       nIPv6 = 0;
-      cache.reserve(ips.size());
+      cache[requestedFlags].reserve(ips.size());
       for (set<CNetAddr>::iterator it = ips.begin(); it != ips.end(); it++) {
         struct in_addr addr;
         struct in6_addr addr6;
@@ -202,18 +214,18 @@ public:
           addr_t a;
           a.v = 4;
           memcpy(&a.data.v4, &addr, 4);
-          cache.push_back(a);
+          cache[requestedFlags].push_back(a);
           nIPv4++;
         } else if ((*it).GetIn6Addr(&addr6)) {
           addr_t a;
           a.v = 6;
           memcpy(&a.data.v6, &addr6, 16);
-          cache.push_back(a);
+          cache[requestedFlags].push_back(a);
           nIPv6++;
         }
       }
       cacheHits = 0;
-      cacheTime = now;
+      cacheTime[requestedFlags] = now;
     }
   }
 
@@ -227,13 +239,12 @@ public:
     dns_opt.port = opts->nPort;
     dns_opt.nRequests = 0;
     cache.clear();
-    cache.reserve(1000);
-    cacheTime = 0;
+    cacheTime.clear();
     cacheHits = 0;
     dbQueries = 0;
     nIPv4 = 0;
     nIPv6 = 0;
-    cacheHit(true);
+    filterWhitelist = std::vector<uint64_t>(filter_whitelist, filter_whitelist + (sizeof filter_whitelist / sizeof filter_whitelist[0]));
   }
 
   void run() {
@@ -241,10 +252,23 @@ public:
   }
 };
 
-extern "C" int GetIPList(void *data, addr_t* addr, int max, int ipv4, int ipv6) {
+extern "C" int GetIPList(void *data, char *requestedHostname, addr_t* addr, int max, int ipv4, int ipv6) {
   CDnsThread *thread = (CDnsThread*)data;
-  thread->cacheHit();
-  unsigned int size = thread->cache.size();
+
+  uint64_t requestedFlags = 0;
+  int hostlen = strlen(requestedHostname);
+  if (hostlen > 1 && requestedHostname[0] == 'x' && requestedHostname[1] != '0') {
+    char *pEnd;
+    uint64_t flags = (uint64_t)strtoull(requestedHostname+1, &pEnd, 16);
+    if (*pEnd == '.' && pEnd <= requestedHostname+17 && std::find(thread->filterWhitelist.begin(), thread->filterWhitelist.end(), flags) != thread->filterWhitelist.end())
+      requestedFlags = flags;
+    else
+      return 0;
+  }
+  else if (strcasecmp(requestedHostname, thread->dns_opt.host))
+    return 0;
+  thread->cacheHit(requestedFlags);
+  unsigned int size = thread->cache[requestedFlags].size();
   unsigned int maxmax = (ipv4 ? thread->nIPv4 : 0) + (ipv6 ? thread->nIPv6 : 0);
   if (max > size)
     max = size;
@@ -254,16 +278,16 @@ extern "C" int GetIPList(void *data, addr_t* addr, int max, int ipv4, int ipv6) 
   while (i<max) {
     int j = i + (rand() % (size - i));
     do {
-        bool ok = (ipv4 && thread->cache[j].v == 4) || 
-                  (ipv6 && thread->cache[j].v == 6);
+        bool ok = (ipv4 && thread->cache[requestedFlags][j].v == 4) ||
+                  (ipv6 && thread->cache[requestedFlags][j].v == 6);
         if (ok) break;
         j++;
         if (j==size)
             j=i;
     } while(1);
-    addr[i] = thread->cache[j];
-    thread->cache[j] = thread->cache[i];
-    thread->cache[i] = addr[i];
+    addr[i] = thread->cache[requestedFlags][j];
+    thread->cache[requestedFlags][j] = thread->cache[requestedFlags][i];
+    thread->cache[requestedFlags][i] = addr[i];
     i++;
   }
   return max;
@@ -306,11 +330,11 @@ extern "C" void* ThreadDumper(void*) {
         rename("dnsseed.dat.new", "dnsseed.dat");
       }
       FILE *d = fopen("dnsseed.dump", "w");
-      fprintf(d, "# address                                        good  lastSuccess    %%(2h)   %%(8h)   %%(1d)   %%(7d)  %%(30d)  blocks      svcs  version\n");
+      fprintf(d, "# address                                        servicebits good  lastSuccess    %%(2h)   %%(8h)   %%(1d)   %%(7d)  %%(30d)  blocks      svcs  version\n");
       double stat[5]={0,0,0,0,0};
       for (vector<CAddrReport>::const_iterator it = v.begin(); it < v.end(); it++) {
         CAddrReport rep = *it;
-        fprintf(d, "%-47s  %4d  %11"PRId64"  %6.2f%% %6.2f%% %6.2f%% %6.2f%% %6.2f%%  %6i  %08"PRIx64"  %5i \"%s\"\n", rep.ip.ToString().c_str(), (int)rep.fGood, rep.lastSuccess, 100.0*rep.uptime[0], 100.0*rep.uptime[1], 100.0*rep.uptime[2], 100.0*rep.uptime[3], 100.0*rep.uptime[4], rep.blocks, rep.services, rep.clientVersion, rep.clientSubVersion.c_str());
+        fprintf(d, "%-47s  %8lld %4d  %11"PRId64"  %6.2f%% %6.2f%% %6.2f%% %6.2f%% %6.2f%%  %6i  %08"PRIx64"  %5i \"%s\"\n", rep.ip.ToString().c_str(), (uint64_t)rep.services, (int)rep.fGood, rep.lastSuccess, 100.0*rep.uptime[0], 100.0*rep.uptime[1], 100.0*rep.uptime[2], 100.0*rep.uptime[3], 100.0*rep.uptime[4], rep.blocks, rep.services, rep.clientVersion, rep.clientSubVersion.c_str());
         stat[0] += rep.uptime[0];
         stat[1] += rep.uptime[1];
         stat[2] += rep.uptime[2];
