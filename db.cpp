@@ -175,7 +175,7 @@ void CAddrDb::GetIPs_(set<CNetAddr>& ips, uint64_t requestedFlags, int max, cons
     } else {
       id = *ourId.begin();
     }
-    if (id >= 0 && idToInfo[id].services & requestedFlags) {
+    if (id >= 0 && (idToInfo[id].services & requestedFlags) == requestedFlags) {
       ips.insert(idToInfo[id].ip);
     }
     return;
