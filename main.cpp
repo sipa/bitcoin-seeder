@@ -15,17 +15,6 @@ using namespace std;
 
 bool fTestNet = false;
 
-uint64_t filter_whitelist[] = {
-  0x0000000000000001,
-  0x0000000000000003,
-  0x0000000000000005,
-  0x0000000000000007,
-  0x0000000000000009,
-  0x000000000000000B,
-  0x000000000000000D,
-  0x000000000000000F,
-};
-
 class CDnsSeedOpts {
 public:
   int nThreads;
@@ -40,6 +29,7 @@ public:
   const char *tor;
   const char *ipv4_proxy;
   const char *ipv6_proxy;
+  std::set<uint64_t> filter_whitelist;
 
   CDnsSeedOpts() : nThreads(96), nDnsThreads(4), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false), ipv4_proxy(NULL), ipv6_proxy(NULL) {}
 
@@ -57,6 +47,7 @@ public:
                               "-o <ip:port>    Tor proxy IP/Port\n"
                               "-i <ip:port>    IPV4 SOCKS5 proxy IP/Port\n"
                               "-k <ip:port>    IPV6 SOCKS5 proxy IP/Port\n"
+                              "-w f1,f2,...    Allow these flag combinations as filters\n"
                               "--testnet       Use testnet\n"
                               "--wipeban       Wipe list of banned nodes\n"
                               "--wipeignore    Wipe list of ignored nodes\n"
@@ -75,6 +66,7 @@ public:
         {"onion", required_argument, 0, 'o'},
         {"proxyipv4", required_argument, 0, 'i'},
         {"proxyipv6", required_argument, 0, 'k'},
+        {"filter", required_argument, 0, 'w'},
         {"testnet", no_argument, &fUseTestNet, 1},
         {"wipeban", no_argument, &fWipeBan, 1},
         {"wipeignore", no_argument, &fWipeBan, 1},
@@ -133,11 +125,31 @@ public:
           break;
         }
 
+        case 'w': {
+          char* ptr = optarg;
+          while (*ptr != 0) {
+            unsigned long l = strtoul(ptr, &ptr, 0);
+            if (*ptr == ',') {
+                ptr++;
+            } else if (*ptr != 0) {
+                break;
+            }
+            filter_whitelist.insert(l);
+          }
+          break;
+        }
+
         case '?': {
           showHelp = true;
           break;
         }
       }
+    }
+    if (filter_whitelist.empty()) {
+        filter_whitelist.insert(1);
+        filter_whitelist.insert(5);
+        filter_whitelist.insert(9);
+        filter_whitelist.insert(13);
     }
     if (host != NULL && ns == NULL) showHelp = true;
     if (showHelp) fprintf(stderr, help, argv[0]);
@@ -189,7 +201,7 @@ public:
   std::map<uint64_t, time_t> cacheTime;
   unsigned int cacheHits;
   uint64_t dbQueries;
-  std::vector<uint64_t> filterWhitelist;
+  std::set<uint64_t> filterWhitelist;
 
   void cacheHit(uint64_t requestedFlags, bool force = false) {
     static bool nets[NET_MAX] = {};
@@ -244,7 +256,7 @@ public:
     dbQueries = 0;
     nIPv4 = 0;
     nIPv6 = 0;
-    filterWhitelist = std::vector<uint64_t>(filter_whitelist, filter_whitelist + (sizeof filter_whitelist / sizeof filter_whitelist[0]));
+    filterWhitelist = opts->filter_whitelist;
   }
 
   void run() {
@@ -330,11 +342,11 @@ extern "C" void* ThreadDumper(void*) {
         rename("dnsseed.dat.new", "dnsseed.dat");
       }
       FILE *d = fopen("dnsseed.dump", "w");
-      fprintf(d, "# address                                        servicebits good  lastSuccess    %%(2h)   %%(8h)   %%(1d)   %%(7d)  %%(30d)  blocks      svcs  version\n");
+      fprintf(d, "# address                                        good  lastSuccess    %%(2h)   %%(8h)   %%(1d)   %%(7d)  %%(30d)  blocks      svcs  version\n");
       double stat[5]={0,0,0,0,0};
       for (vector<CAddrReport>::const_iterator it = v.begin(); it < v.end(); it++) {
         CAddrReport rep = *it;
-        fprintf(d, "%-47s  %8lld %4d  %11"PRId64"  %6.2f%% %6.2f%% %6.2f%% %6.2f%% %6.2f%%  %6i  %08"PRIx64"  %5i \"%s\"\n", rep.ip.ToString().c_str(), (uint64_t)rep.services, (int)rep.fGood, rep.lastSuccess, 100.0*rep.uptime[0], 100.0*rep.uptime[1], 100.0*rep.uptime[2], 100.0*rep.uptime[3], 100.0*rep.uptime[4], rep.blocks, rep.services, rep.clientVersion, rep.clientSubVersion.c_str());
+        fprintf(d, "%-47s  %4d  %11"PRId64"  %6.2f%% %6.2f%% %6.2f%% %6.2f%% %6.2f%%  %6i  %08"PRIx64"  %5i \"%s\"\n", rep.ip.ToString().c_str(), (int)rep.fGood, rep.lastSuccess, 100.0*rep.uptime[0], 100.0*rep.uptime[1], 100.0*rep.uptime[2], 100.0*rep.uptime[3], 100.0*rep.uptime[4], rep.blocks, rep.services, rep.clientVersion, rep.clientSubVersion.c_str());
         stat[0] += rep.uptime[0];
         stat[1] += rep.uptime[1];
         stat[2] += rep.uptime[2];
@@ -406,6 +418,14 @@ int main(int argc, char **argv) {
   setbuf(stdout, NULL);
   CDnsSeedOpts opts;
   opts.ParseCommandLine(argc, argv);
+  printf("Supporting whitelisted filters: ");
+  for (std::set<uint64_t>::const_iterator it = opts.filter_whitelist.begin(); it != opts.filter_whitelist.end(); it++) {
+      if (it != opts.filter_whitelist.begin()) {
+          printf(",");
+      }
+      printf("0x%lx", (unsigned long)*it);
+  }
+  printf("\n");
   if (opts.tor) {
     CService service(opts.tor, 9050);
     if (service.IsValid()) {
