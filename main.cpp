@@ -446,10 +446,10 @@ int main(int argc, char **argv) {
   bool fDNS = true;
   if (opts.fUseTestNet) {
       printf("Using testnet.\n");
-      pchMessageStart[0] = 0x26;
-      pchMessageStart[1] = 0xA7;
-      pchMessageStart[2] = 0x24;
-      pchMessageStart[3] = 0xB6;
+      pchMessageStart[0] = 0xA5;
+      pchMessageStart[1] = 0xF1;
+      pchMessageStart[2] = 0xE7;
+      pchMessageStart[3] = 0x26;
       seeds = testnet_seeds;
       fTestNet = true;
   }
