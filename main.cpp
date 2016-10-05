@@ -81,17 +81,17 @@ public:
           host = optarg;
           break;
         }
-        
+
         case 'm': {
           mbox = optarg;
           break;
         }
-        
+
         case 'n': {
           ns = optarg;
           break;
         }
-        
+
         case 't': {
           int n = strtol(optarg, NULL, 10);
           if (n > 0 && n < 1000) nThreads = n;
@@ -446,10 +446,10 @@ int main(int argc, char **argv) {
   bool fDNS = true;
   if (opts.fUseTestNet) {
       printf("Using testnet.\n");
-      pchMessageStart[0] = 0xA5;
-      pchMessageStart[1] = 0xF1;
-      pchMessageStart[2] = 0xE7;
-      pchMessageStart[3] = 0x26;
+      pchMessageStart[0] = 0x0C;
+      pchMessageStart[1] = 0x9E;
+      pchMessageStart[2] = 0xD7;
+      pchMessageStart[3] = 0xA2;
       seeds = testnet_seeds;
       fTestNet = true;
   }
