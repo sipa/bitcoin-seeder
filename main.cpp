@@ -14,14 +14,14 @@
 
 using namespace std;
 
-bool fTestNet = false;
+bool fNolNet = false;
 
 class CDnsSeedOpts {
 public:
   int nThreads;
   int nPort;
   int nDnsThreads;
-  int fUseTestNet;
+  int fUseNolNet;
   int fWipeBan;
   int fWipeIgnore;
   const char *mbox;
@@ -32,7 +32,7 @@ public:
   const char *ipv6_proxy;
   std::set<uint64_t> filter_whitelist;
 
-  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false), ipv4_proxy(NULL), ipv6_proxy(NULL) {}
+  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseNolNet(false), fWipeBan(false), fWipeIgnore(false), ipv4_proxy(NULL), ipv6_proxy(NULL) {}
 
   void ParseCommandLine(int argc, char **argv) {
     static const char *help = "Bitcoin-seeder\n"
@@ -49,7 +49,7 @@ public:
                               "-i <ip:port>    IPV4 SOCKS5 proxy IP/Port\n"
                               "-k <ip:port>    IPV6 SOCKS5 proxy IP/Port\n"
                               "-w f1,f2,...    Allow these flag combinations as filters\n"
-                              "--testnet       Use testnet\n"
+                              "--nolnet        Use nolnet\n"
                               "--wipeban       Wipe list of banned nodes\n"
                               "--wipeignore    Wipe list of ignored nodes\n"
                               "-?, --help      Show this text\n"
@@ -68,7 +68,7 @@ public:
         {"proxyipv4", required_argument, 0, 'i'},
         {"proxyipv6", required_argument, 0, 'k'},
         {"filter", required_argument, 0, 'w'},
-        {"testnet", no_argument, &fUseTestNet, 1},
+        {"nolnet", no_argument, &fUseNolNet, 1},
         {"wipeban", no_argument, &fWipeBan, 1},
         {"wipeignore", no_argument, &fWipeBan, 1},
         {"help", no_argument, 0, 'h'},
@@ -397,16 +397,13 @@ extern "C" void* ThreadStats(void*) {
   return nullptr;
 }
 
-static const string mainnet_seeds[] = {"dnsseed.bluematt.me", "bitseed.xf2.org", "dnsseed.bitcoin.dashjr.org", "seed.bitcoin.sipa.be", ""};
-static const string testnet_seeds[] = {"testnet-seed.alexykot.me",
-                                       "testnet-seed.bitcoin.petertodd.org",
-                                       "testnet-seed.bluematt.me",
-                                       "testnet-seed.bitcoin.schildbach.de",
+static const string mainnet_seeds[] = {"seed.bitnodes.io", "seed.btcc.com", "seed.bitcoin.sipa.be", ""};
+static const string nolnet_seeds[]  = {"nolnet-seed.bitcoinunlimited.info",
                                        ""};
 static const string *seeds = mainnet_seeds;
 
 extern "C" void* ThreadSeeder(void*) {
-  if (!fTestNet){
+  if (!fNolNet){
     db.Add(CService("kjy2eqzk4zwi5zd3.onion", 8333), true);
   }
   do {
@@ -457,14 +454,14 @@ int main(int argc, char **argv) {
     }
   }
   bool fDNS = true;
-  if (opts.fUseTestNet) {
-      printf("Using testnet.\n");
-      pchMessageStart[0] = 0x0b;
-      pchMessageStart[1] = 0x11;
-      pchMessageStart[2] = 0x09;
-      pchMessageStart[3] = 0x07;
-      seeds = testnet_seeds;
-      fTestNet = true;
+  if (opts.fUseNolNet) {
+      printf("Using nolnet.\n");
+      pchMessageStart[0] = 0xfa;
+      pchMessageStart[1] = 0xce;
+      pchMessageStart[2] = 0xc4;
+      pchMessageStart[3] = 0xe9;
+      seeds = nolnet_seeds;
+      fNolNet = true;
   }
   if (!opts.ns) {
     printf("No nameserver set. Not starting DNS server.\n");
