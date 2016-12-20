@@ -151,6 +151,7 @@ public:
         filter_whitelist.insert(5);
         filter_whitelist.insert(9);
         filter_whitelist.insert(13);
+        filter_whitelist.insert(17); //BU: add support for NODE_XTHIN service bit (1 << 4 | 1 << 0)
     }
     if (host != NULL && ns == NULL) showHelp = true;
     if (showHelp) fprintf(stderr, help, argv[0]);
