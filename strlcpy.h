@@ -24,10 +24,10 @@
  * will be copied.  Always NUL terminates (unless siz == 0).
  * Returns strlen(src); if retval >= siz, truncation occurred.
  */
-inline size_t strlcpy(char *dst, const char *src, size_t siz)
+inline size_t strlcpy(char* dst, const char* src, size_t siz)
 {
-    char *d = dst;
-    const char *s = src;
+    char* d = dst;
+    const char* s = src;
     size_t n = siz;
 
     /* Copy as many bytes as will fit */
@@ -44,12 +44,12 @@ inline size_t strlcpy(char *dst, const char *src, size_t siz)
     if (n == 0)
     {
         if (siz != 0)
-            *d = '\0';  /* NUL-terminate dst */
+            *d = '\0'; /* NUL-terminate dst */
         while (*s++)
             ;
     }
 
-    return(s - src - 1); /* count does not include NUL */
+    return (s - src - 1); /* count does not include NUL */
 }
 
 /*
@@ -59,10 +59,10 @@ inline size_t strlcpy(char *dst, const char *src, size_t siz)
  * Returns strlen(src) + MIN(siz, strlen(initial dst)).
  * If retval >= siz, truncation occurred.
  */
-inline size_t strlcat(char *dst, const char *src, size_t siz)
+inline size_t strlcat(char* dst, const char* src, size_t siz)
 {
-    char *d = dst;
-    const char *s = src;
+    char* d = dst;
+    const char* s = src;
     size_t n = siz;
     size_t dlen;
 
@@ -73,7 +73,7 @@ inline size_t strlcat(char *dst, const char *src, size_t siz)
     n = siz - dlen;
 
     if (n == 0)
-        return(dlen + strlen(s));
+        return (dlen + strlen(s));
     while (*s != '\0')
     {
         if (n != 1)
@@ -85,6 +85,6 @@ inline size_t strlcat(char *dst, const char *src, size_t siz)
     }
     *d = '\0';
 
-    return(dlen + (s - src)); /* count does not include NUL */
+    return (dlen + (s - src)); /* count does not include NUL */
 }
 #endif

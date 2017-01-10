@@ -3,26 +3,26 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file license.txt or http://www.opensource.org/licenses/mit-license.php.
 
-#include <vector>
 #include <stdexcept>
+#include <vector>
 
+#include "netbase.h"
 #include "protocol.h"
 #include "util.h"
-#include "netbase.h"
 
 
 #ifndef WIN32
-# include <arpa/inet.h>
+#include <arpa/inet.h>
 #endif
 
 static const char* ppszTypeName[] =
-{
-    "ERROR",
-    "tx",
-    "block",
+    {
+        "ERROR",
+        "tx",
+        "block",
 };
 
-unsigned char pchMessageStart[4] = { 0xf9, 0xbe, 0xb4, 0xd9 };
+unsigned char pchMessageStart[4] = {0xf9, 0xbe, 0xb4, 0xd9};
 
 CMessageHeader::CMessageHeader()
 {
@@ -43,7 +43,7 @@ CMessageHeader::CMessageHeader(const char* pszCommand, unsigned int nMessageSize
 
 std::string CMessageHeader::GetCommand() const
 {
-    if (pchCommand[COMMAND_SIZE-1] == 0)
+    if (pchCommand[COMMAND_SIZE - 1] == 0)
         return std::string(pchCommand, pchCommand + strlen(pchCommand));
     else
         return std::string(pchCommand, pchCommand + COMMAND_SIZE);
@@ -78,7 +78,6 @@ bool CMessageHeader::IsValid() const
 
     return true;
 }
-
 
 
 CAddress::CAddress() : CService()
