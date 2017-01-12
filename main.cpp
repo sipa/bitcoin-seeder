@@ -1,13 +1,13 @@
 #include <algorithm>
 
 #define __STDC_FORMAT_MACROS
+#include <atomic>
+#include <getopt.h>
 #include <inttypes.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <getopt.h>
-#include <atomic>
 
 #include "bitcoin.h"
 #include "db.h"
@@ -55,6 +55,7 @@ public:
     CDnsSeedOpts() : nThreads(96), nDnsThreads(4), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseNolNet(false), fWipeBan(false), fWipeIgnore(false), ipv4_proxy(NULL), ipv6_proxy(NULL) {}
     void ParseCommandLine(int argc, char** argv)
     {
+
         static const char* help = "dnsseed\n"
                                   "Usage: %s -h <host> -n <ns> [-m <mbox>] [-t <threads>] [-p <port>]\n"
                                   "\n"
@@ -95,6 +96,7 @@ public:
                 {"wipeignore", no_argument, &fWipeBan, 1},
                 {"quiet", no_argument, &fQuiet, 1},
                 {"help", no_argument, 0, 'H'},
+
                 {0, 0, 0, 0}};
             int option_index = 0;
             int c = getopt_long(argc, argv, "h:n:m:t:p:d:o:i:k:w:", long_options, &option_index);
@@ -191,6 +193,7 @@ public:
             default:
                 break;
             }
+
         }
         if (filter_whitelist.empty())
         {
@@ -331,6 +334,7 @@ public:
     {
         dnsserver(&dns_opt);
     }
+
 };
 
 extern "C" int GetIPList(void* data, char* requestedHostname, addr_t* addr, int max, int ipv4, int ipv6)
@@ -461,7 +465,6 @@ extern "C" void* ThreadStats(void*)
         strftime(c, 256, "[%y-%m-%d %H:%M:%S]", tmp);
         CAddrDbStats stats;
         db.GetStats(stats);
-
         uint64_t requests = 0;
         uint64_t queries = 0;
         for (unsigned int i = 0; i < dnsThread.size(); i++)
