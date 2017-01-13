@@ -217,7 +217,7 @@ public:
         nets[NET_IPV6] = true;
     }
     time_t now = time(NULL);
-    FlagSpecificData thisflag = perflag[requestedFlags];
+    FlagSpecificData& thisflag = perflag[requestedFlags];
     thisflag.cacheHits++;
     if (force || thisflag.cacheHits * 400 > (thisflag.cache.size()*thisflag.cache.size()) || (thisflag.cacheHits*thisflag.cacheHits * 20 > thisflag.cache.size() && (now - thisflag.cacheTime > 5))) {
       set<CNetAddr> ips;
