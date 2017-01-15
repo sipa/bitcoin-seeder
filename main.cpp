@@ -74,7 +74,7 @@ public:
                                   "--wipeban       Wipe list of banned nodes\n"
                                   "--wipeignore    Wipe list of ignored nodes\n"
                                   "--quiet         Don't print stats\n"
-                                  "-?, --help      Show this text\n"
+                                  "-?, --help      Show this text and exit\n"
                                   "\n";
         bool showHelp = false;
 
@@ -209,7 +209,10 @@ public:
         if (host != NULL && ns == NULL)
             showHelp = true;
         if (showHelp)
+        {
             fprintf(stderr, help, argv[0]);
+            exit(0);
+        }
     }
 };
 
