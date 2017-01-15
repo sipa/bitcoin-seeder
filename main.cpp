@@ -199,9 +199,12 @@ public:
         {
             filter_whitelist.insert(1);
             filter_whitelist.insert(5);
-            filter_whitelist.insert(9);
-            filter_whitelist.insert(13);
-            filter_whitelist.insert(17); //BU: add support for NODE_XTHIN service bit (1 << 4 | 1 << 0)
+            // BU: disable NODE_WITNESS by default
+            // filter_whitelist.insert(9);
+            // filter_whitelist.insert(13);
+            // BU: enable NODE_XTHIN by default
+            filter_whitelist.insert(17); // (1 << 0 | 1 << 4)
+            filter_whitelist.insert(19); // (1 << 0 | 1 << 1 | 1 << 4)
         }
         if (host != NULL && ns == NULL)
             showHelp = true;
