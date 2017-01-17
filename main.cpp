@@ -203,8 +203,7 @@ public:
             // filter_whitelist.insert(9);
             // filter_whitelist.insert(13);
             // BU: enable NODE_XTHIN by default
-            filter_whitelist.insert(17); // (1 << 0 | 1 << 4)
-            filter_whitelist.insert(19); // (1 << 0 | 1 << 1 | 1 << 4)
+            filter_whitelist.insert(21); // (1 << 0 | 1 << 2 | 1 << 4)
         }
         if (host != NULL && ns == NULL)
             showHelp = true;
