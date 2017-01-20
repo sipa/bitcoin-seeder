@@ -53,10 +53,9 @@ public:
     const char* seedNode;
     std::set<uint64_t> filter_whitelist;
 
-  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseNolNet(false), fWipeBan(false), fWipeIgnore(false), ipv4_proxy(NULL), ipv6_proxy(NULL), seedNode(NULL) {}
+    CDnsSeedOpts() : nThreads(96), nDnsThreads(4), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseNolNet(false), fWipeBan(false), fWipeIgnore(false), ipv4_proxy(NULL), ipv6_proxy(NULL), seedNode(NULL) {}
     void ParseCommandLine(int argc, char** argv)
     {
-
         static const char* help = "dnsseed\n"
                                   "Usage: %s -h <host> -n <ns> [-m <mbox>] [-t <threads>] [-p <port>]\n"
                                   "\n"
@@ -200,7 +199,6 @@ public:
             default:
                 break;
             }
-
         }
         if (filter_whitelist.empty())
         {
@@ -230,22 +228,22 @@ CAddrDb db;
 
 void LoadFromNode(const char* ipPort)
 {
-  printf("Loading addresses from %s\n", ipPort);
-  vector<CAddress> addr;
-  CServiceResult res;
-  res.service = CService(ipPort,fNolNet ? 9333:8333,true );
-  res.nBanTime = 0;
-  res.nClientV = 0;
-  res.nHeight = 0;
-  res.strClientV = "";
-  res.fGood = TestNode(res.service, res.nBanTime, res.nClientV, res.strClientV, res.nHeight, &addr);           
-  db.Add(addr);
-  printf("Found %d addresses: ", (int) addr.size());
-  for(vector<CAddress>::iterator i = addr.begin(); i != addr.end(); i++)
+    printf("Loading addresses from %s\n", ipPort);
+    vector<CAddress> addr;
+    CServiceResult res;
+    res.service = CService(ipPort, fNolNet ? 9333 : 8333, true);
+    res.nBanTime = 0;
+    res.nClientV = 0;
+    res.nHeight = 0;
+    res.strClientV = "";
+    res.fGood = TestNode(res.service, res.nBanTime, res.nClientV, res.strClientV, res.nHeight, &addr);
+    db.Add(addr);
+    printf("Found %d addresses: ", (int)addr.size());
+    for (vector<CAddress>::iterator i = addr.begin(); i != addr.end(); i++)
     {
-      printf("%s, ", i->ToString().c_str());
+        printf("%s, ", i->ToString().c_str());
     }
-  printf("\n");
+    printf("\n");
 }
 
 extern "C" void* ThreadCrawler(void* data)
@@ -366,7 +364,6 @@ public:
     {
         dnsserver(&dns_opt);
     }
-
 };
 
 extern "C" int GetIPList(void* data, char* requestedHostname, addr_t* addr, int max, int ipv4, int ipv6)
@@ -628,10 +625,10 @@ int main(int argc, char** argv)
         log_printf("done\n");
     }
     if (opts.seedNode)
-      {
+    {
         LoadFromNode(opts.seedNode);
-      }
-    
+    }
+
     pthread_t threadDns, threadSeed, threadDump, threadStats;
     if (fDNS)
     {
