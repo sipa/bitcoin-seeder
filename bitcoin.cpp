@@ -10,6 +10,8 @@
 
 using namespace std;
 
+extern bool fNolNet;
+
 class CNode
 {
     SOCKET sock;
@@ -171,13 +173,13 @@ class CNode
             while (it != vAddrNew.end())
             {
                 CAddress& addr = *it;
-                //        printf("%s: got address %s\n", ToString(you).c_str(), addr.ToString().c_str(), (int)(vAddr->size()));
+                // printf("%s: got address %s\n", ToString(you).c_str(), addr.ToString().c_str());
                 it++;
                 if (addr.nTime <= 100000000 || addr.nTime > now + 600)
                     addr.nTime = now - 5 * 86400;
                 if (addr.nTime > now - 604800)
                     vAddr->push_back(addr);
-                //        printf("%s: added address %s (#%i)\n", ToString(you).c_str(), addr.ToString().c_str(), (int)(vAddr->size()));
+                // printf("%s: added address %s (#%i)\n", ToString(you).c_str(), addr.ToString().c_str(), (int)(vAddr->size()));
                 if (vAddr->size() > 1000)
                 {
                     doneAfter = 1;
@@ -218,7 +220,7 @@ class CNode
             }
             string strCommand = hdr.GetCommand();
             unsigned int nMessageSize = hdr.nMessageSize;
-            if (nMessageSize > MAX_SIZE)
+            if (!fNolNet && (nMessageSize > MAX_SIZE))
             {
                 // printf("%s: BAD (message too large)\n", ToString(you).c_str());
                 ban = 100000;

@@ -50,9 +50,10 @@ public:
     const char* tor;
     const char* ipv4_proxy;
     const char* ipv6_proxy;
+    const char* seedNode;
     std::set<uint64_t> filter_whitelist;
 
-    CDnsSeedOpts() : nThreads(96), nDnsThreads(4), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseNolNet(false), fWipeBan(false), fWipeIgnore(false), ipv4_proxy(NULL), ipv6_proxy(NULL) {}
+  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseNolNet(false), fWipeBan(false), fWipeIgnore(false), ipv4_proxy(NULL), ipv6_proxy(NULL), seedNode(NULL) {}
     void ParseCommandLine(int argc, char** argv)
     {
 
@@ -70,6 +71,7 @@ public:
                                   "-i <ip:port>    IPV4 SOCKS5 proxy IP/Port\n"
                                   "-k <ip:port>    IPV6 SOCKS5 proxy IP/Port\n"
                                   "-w f1,f2,...    Allow these flag combinations as filters\n"
+                                  "-s <ip:port>    Connect to this node to find other nodes\n"
                                   "--nolnet        Use nolnet\n"
                                   "--wipeban       Wipe list of banned nodes\n"
                                   "--wipeignore    Wipe list of ignored nodes\n"
@@ -99,7 +101,7 @@ public:
 
                 {0, 0, 0, 0}};
             int option_index = 0;
-            int c = getopt_long(argc, argv, "h:n:m:t:p:d:o:i:k:w:", long_options, &option_index);
+            int c = getopt_long(argc, argv, "h:n:m:t:p:d:o:i:k:w:s:", long_options, &option_index);
             if (c == -1)
                 break;
             switch (c)
@@ -155,6 +157,11 @@ public:
             case 'i':
             {
                 ipv4_proxy = optarg;
+                break;
+            }
+            case 's':
+            {
+                seedNode = optarg;
                 break;
             }
 
@@ -220,6 +227,26 @@ extern "C" {
 }
 
 CAddrDb db;
+
+void LoadFromNode(const char* ipPort)
+{
+  printf("Loading addresses from %s\n", ipPort);
+  vector<CAddress> addr;
+  CServiceResult res;
+  res.service = CService(ipPort,fNolNet ? 9333:8333,true );
+  res.nBanTime = 0;
+  res.nClientV = 0;
+  res.nHeight = 0;
+  res.strClientV = "";
+  res.fGood = TestNode(res.service, res.nBanTime, res.nClientV, res.strClientV, res.nHeight, &addr);           
+  db.Add(addr);
+  printf("Found %d addresses: ", (int) addr.size());
+  for(vector<CAddress>::iterator i = addr.begin(); i != addr.end(); i++)
+    {
+      printf("%s, ", i->ToString().c_str());
+    }
+  printf("\n");
+}
 
 extern "C" void* ThreadCrawler(void* data)
 {
@@ -600,6 +627,11 @@ int main(int argc, char** argv)
             db.ResetIgnores();
         log_printf("done\n");
     }
+    if (opts.seedNode)
+      {
+        LoadFromNode(opts.seedNode);
+      }
+    
     pthread_t threadDns, threadSeed, threadDump, threadStats;
     if (fDNS)
     {
