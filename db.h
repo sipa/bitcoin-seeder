@@ -16,7 +16,7 @@
 
 static inline int GetRequireHeight(const bool nolnet = fNolNet)
 {
-    return nolnet ? 500000 : 350000;
+    return nolnet ? 0 : 350000;
 }
 
 std::string static inline ToString(const CService& ip)
@@ -108,6 +108,7 @@ public:
 
     bool IsGood() const
     {
+        return true;
         if (ip.GetPort() != GetDefaultPort())
             return false;
         if (!(services & NODE_NETWORK))
