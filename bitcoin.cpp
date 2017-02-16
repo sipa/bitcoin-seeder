@@ -23,6 +23,8 @@ class CNode {
   int ban;
   int64 doneAfter;
   CAddress you;
+  bool fGotVersion;
+  bool fGotVerAck;
 
   int GetTimeout() {
       if (you.IsTor())
@@ -99,6 +101,10 @@ class CNode {
   bool ProcessMessage(string strCommand, CDataStream& vRecv) {
 //    printf("%s: RECV %s\n", ToString(you).c_str(), strCommand.c_str());
     if (strCommand == "version") {
+      if (fGotVersion) {
+        // printf("%s: sent duplicate version\n", ToString(you).c_str());
+        return false;
+      }
       int64 nTime;
       CAddress addrMe;
       CAddress addrFrom;
@@ -111,6 +117,7 @@ class CNode {
         vRecv >> strSubVer;
       if (nVersion >= 209 && !vRecv.empty())
         vRecv >> nStartingHeight;
+      fGotVersion = true;
       
       if (nVersion >= 209) {
         BeginMessage("verack");
@@ -123,13 +130,28 @@ class CNode {
       }
       return false;
     }
+
+    if (!fGotVersion) {
+      // printf("%s: sent %s before version\n", ToString(you).c_str(), strCommand.c_str());
+      return false;
+    }
     
     if (strCommand == "verack") {
+      if (fGotVerAck) {
+        // printf("%s: sent duplicate verack\n", ToString(you).c_str());
+        return false;
+      }
+      fGotVerAck = true;
       this->vRecv.SetVersion(min(nVersion, PROTOCOL_VERSION));
       GotVersion();
       return false;
     }
-    
+
+    if (nVersion >= 209 && !fGotVerAck) {
+      // printf("%s: sent %s before verack\n", ToString(you).c_str(), strCommand.c_str());
+      return false;
+    }
+
     if (strCommand == "addr" && vAddr) {
       vector<CAddress> vAddrNew;
       vRecv >> vAddrNew;
@@ -211,6 +233,8 @@ public:
       vSend.SetVersion(209);
       vRecv.SetVersion(209);
     }
+    fGotVersion = false;
+    fGotVerAck = false;
   }
   bool Run() {
     bool res = true;
