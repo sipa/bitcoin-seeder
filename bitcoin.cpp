@@ -27,6 +27,8 @@ class CNode {
   int ban;
   int64_t doneAfter;
   CAddress you;
+  bool fGotVersion;
+  bool fGotVerAck;
 
   int GetTimeout() {
       if (you.IsTor())
@@ -83,6 +85,9 @@ class CNode {
 
   bool ProcessMessage(string strCommand, DataStream& vRecv) {
     if (strCommand == "version") {
+      if (fGotVersion) {
+        return false;
+      }
       int64_t nTime;
       uint64_t nServicesMe, nServicesFrom;
       CService addrMe, addrFrom;
@@ -95,15 +100,28 @@ class CNode {
         vRecv >> LIMITED_STRING(strSubVer, 256);
       if (nVersion >= 209 && !vRecv.empty())
         vRecv >> nStartingHeight;
+      fGotVersion = true;
       PushMessage("verack");
+      return false;
+    }
+
+    if (!fGotVersion) {
       return false;
     }
     
     if (strCommand == "verack") {
+      if (fGotVerAck) {
+        return false;
+      }
+      fGotVerAck = true;
       GotVersion();
       return false;
     }
-    
+
+    if (!fGotVerAck) {
+      return false;
+    }
+
     if (strCommand == "addr" && vAddr) {
       vector<CAddress> vAddrNew;
       vRecv >> vAddrNew;
@@ -171,6 +189,8 @@ class CNode {
   
 public:
   CNode(const CService& ip, vector<CAddress>* vAddrIn) : you(ip), vAddr(vAddrIn), ban(0), doneAfter(0), nVersion(0), nStartingHeight(0) {
+    fGotVersion = false;
+    fGotVerAck = false;
   }
   bool Run() {
     bool res = true;
