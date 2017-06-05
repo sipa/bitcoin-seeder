@@ -590,7 +590,7 @@ int main(int argc, char** argv)
     if (opts.fUseNolNet)
     {
         printf("Using nolnet.\n");
-        pchMessageStart[0] = 0xfa;
+        pchMessageStart[0] = 0xfb;
         pchMessageStart[1] = 0xce;
         pchMessageStart[2] = 0xc4;
         pchMessageStart[3] = 0xe9;
