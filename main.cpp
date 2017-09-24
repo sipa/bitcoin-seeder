@@ -389,8 +389,8 @@ extern "C" void* ThreadStats(void*) {
   } while(1);
 }
 
-static const string mainnet_seeds[] = {"vmi132448.contaboserver.net"};
-static const string testnet_seeds[] = {"testnet-zen.zencash.io"};
+static const string mainnet_seeds[] = {""};
+static const string testnet_seeds[] = {""};
 static const string *seeds = mainnet_seeds;
 
 extern "C" void* ThreadSeeder(void*) {
