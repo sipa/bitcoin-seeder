@@ -7,7 +7,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <getopt.h>
-#include <atomic>
 
 #include "bitcoin.h"
 #include "db.h"
@@ -82,17 +81,17 @@ public:
           host = optarg;
           break;
         }
-        
+
         case 'm': {
           mbox = optarg;
           break;
         }
-        
+
         case 'n': {
           ns = optarg;
           break;
         }
-        
+
         case 't': {
           int n = strtol(optarg, NULL, 10);
           if (n > 0 && n < 1000) nThreads = n;
@@ -189,25 +188,19 @@ extern "C" void* ThreadCrawler(void* data) {
     db.ResultMany(ips);
     db.Add(addr);
   } while(1);
-  return nullptr;
 }
 
 extern "C" int GetIPList(void *thread, char *requestedHostname, addr_t *addr, int max, int ipv4, int ipv6);
 
 class CDnsThread {
 public:
-  struct FlagSpecificData {
-      int nIPv4, nIPv6;
-      std::vector<addr_t> cache;
-      time_t cacheTime;
-      unsigned int cacheHits;
-      FlagSpecificData() : nIPv4(0), nIPv6(0), cacheTime(0), cacheHits(0) {}
-  };
-
   dns_opt_t dns_opt; // must be first
   const int id;
-  std::map<uint64_t, FlagSpecificData> perflag;
-  std::atomic<uint64_t> dbQueries;
+  std::map<uint64_t, vector<addr_t> > cache;
+  int nIPv4, nIPv6;
+  std::map<uint64_t, time_t> cacheTime;
+  unsigned int cacheHits;
+  uint64_t dbQueries;
   std::set<uint64_t> filterWhitelist;
 
   void cacheHit(uint64_t requestedFlags, bool force = false) {
@@ -217,16 +210,15 @@ public:
         nets[NET_IPV6] = true;
     }
     time_t now = time(NULL);
-    FlagSpecificData& thisflag = perflag[requestedFlags];
-    thisflag.cacheHits++;
-    if (force || thisflag.cacheHits * 400 > (thisflag.cache.size()*thisflag.cache.size()) || (thisflag.cacheHits*thisflag.cacheHits * 20 > thisflag.cache.size() && (now - thisflag.cacheTime > 5))) {
+    cacheHits++;
+    if (force || cacheHits > (cache[requestedFlags].size()*cache[requestedFlags].size()/400) || (cacheHits*cacheHits > cache[requestedFlags].size() / 20 && (now - cacheTime[requestedFlags] > 5))) {
       set<CNetAddr> ips;
       db.GetIPs(ips, requestedFlags, 1000, nets);
       dbQueries++;
-      thisflag.cache.clear();
-      thisflag.nIPv4 = 0;
-      thisflag.nIPv6 = 0;
-      thisflag.cache.reserve(ips.size());
+      cache[requestedFlags].clear();
+      nIPv4 = 0;
+      nIPv6 = 0;
+      cache[requestedFlags].reserve(ips.size());
       for (set<CNetAddr>::iterator it = ips.begin(); it != ips.end(); it++) {
         struct in_addr addr;
         struct in6_addr addr6;
@@ -234,18 +226,18 @@ public:
           addr_t a;
           a.v = 4;
           memcpy(&a.data.v4, &addr, 4);
-          thisflag.cache.push_back(a);
-          thisflag.nIPv4++;
+          cache[requestedFlags].push_back(a);
+          nIPv4++;
         } else if ((*it).GetIn6Addr(&addr6)) {
           addr_t a;
           a.v = 6;
           memcpy(&a.data.v6, &addr6, 16);
-          thisflag.cache.push_back(a);
-          thisflag.nIPv6++;
+          cache[requestedFlags].push_back(a);
+          nIPv6++;
         }
       }
-      thisflag.cacheHits = 0;
-      thisflag.cacheTime = now;
+      cacheHits = 0;
+      cacheTime[requestedFlags] = now;
     }
   }
 
@@ -258,8 +250,12 @@ public:
     dns_opt.cb = GetIPList;
     dns_opt.port = opts->nPort;
     dns_opt.nRequests = 0;
+    cache.clear();
+    cacheTime.clear();
+    cacheHits = 0;
     dbQueries = 0;
-    perflag.clear();
+    nIPv4 = 0;
+    nIPv6 = 0;
     filterWhitelist = opts->filter_whitelist;
   }
 
@@ -284,9 +280,8 @@ extern "C" int GetIPList(void *data, char *requestedHostname, addr_t* addr, int 
   else if (strcasecmp(requestedHostname, thread->dns_opt.host))
     return 0;
   thread->cacheHit(requestedFlags);
-  auto& thisflag = thread->perflag[requestedFlags];
-  unsigned int size = thisflag.cache.size();
-  unsigned int maxmax = (ipv4 ? thisflag.nIPv4 : 0) + (ipv6 ? thisflag.nIPv6 : 0);
+  unsigned int size = thread->cache[requestedFlags].size();
+  unsigned int maxmax = (ipv4 ? thread->nIPv4 : 0) + (ipv6 ? thread->nIPv6 : 0);
   if (max > size)
     max = size;
   if (max > maxmax)
@@ -295,16 +290,16 @@ extern "C" int GetIPList(void *data, char *requestedHostname, addr_t* addr, int 
   while (i<max) {
     int j = i + (rand() % (size - i));
     do {
-        bool ok = (ipv4 && thisflag.cache[j].v == 4) ||
-                  (ipv6 && thisflag.cache[j].v == 6);
+        bool ok = (ipv4 && thread->cache[requestedFlags][j].v == 4) ||
+                  (ipv6 && thread->cache[requestedFlags][j].v == 6);
         if (ok) break;
         j++;
         if (j==size)
             j=i;
     } while(1);
-    addr[i] = thisflag.cache[j];
-    thisflag.cache[j] = thisflag.cache[i];
-    thisflag.cache[i] = addr[i];
+    addr[i] = thread->cache[requestedFlags][j];
+    thread->cache[requestedFlags][j] = thread->cache[requestedFlags][i];
+    thread->cache[requestedFlags][i] = addr[i];
     i++;
   }
   return max;
@@ -315,7 +310,6 @@ vector<CDnsThread*> dnsThread;
 extern "C" void* ThreadDNS(void* arg) {
   CDnsThread *thread = (CDnsThread*)arg;
   thread->run();
-  return nullptr;
 }
 
 int StatCompare(const CAddrReport& a, const CAddrReport& b) {
@@ -352,7 +346,7 @@ extern "C" void* ThreadDumper(void*) {
       double stat[5]={0,0,0,0,0};
       for (vector<CAddrReport>::const_iterator it = v.begin(); it < v.end(); it++) {
         CAddrReport rep = *it;
-        fprintf(d, "%-47s  %4d  %11" PRId64 "  %6.2f%% %6.2f%% %6.2f%% %6.2f%% %6.2f%%  %6i  %08" PRIx64 "  %5i \"%s\"\n", rep.ip.ToString().c_str(), (int)rep.fGood, rep.lastSuccess, 100.0*rep.uptime[0], 100.0*rep.uptime[1], 100.0*rep.uptime[2], 100.0*rep.uptime[3], 100.0*rep.uptime[4], rep.blocks, rep.services, rep.clientVersion, rep.clientSubVersion.c_str());
+        fprintf(d, "%-47s  %4d  %11"PRId64"  %6.2f%% %6.2f%% %6.2f%% %6.2f%% %6.2f%%  %6i  %08"PRIx64"  %5i \"%s\"\n", rep.ip.ToString().c_str(), (int)rep.fGood, rep.lastSuccess, 100.0*rep.uptime[0], 100.0*rep.uptime[1], 100.0*rep.uptime[2], 100.0*rep.uptime[3], 100.0*rep.uptime[4], rep.blocks, rep.services, rep.clientVersion, rep.clientSubVersion.c_str());
         stat[0] += rep.uptime[0];
         stat[1] += rep.uptime[1];
         stat[2] += rep.uptime[2];
@@ -365,7 +359,6 @@ extern "C" void* ThreadDumper(void*) {
       fclose(ff);
     }
   } while(1);
-  return nullptr;
 }
 
 extern "C" void* ThreadStats(void*) {
@@ -394,21 +387,13 @@ extern "C" void* ThreadStats(void*) {
     printf("%s %i/%i available (%i tried in %is, %i new, %i active), %i banned; %llu DNS requests, %llu db queries", c, stats.nGood, stats.nAvail, stats.nTracked, stats.nAge, stats.nNew, stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned, (unsigned long long)requests, (unsigned long long)queries);
     Sleep(1000);
   } while(1);
-  return nullptr;
 }
 
-static const string mainnet_seeds[] = {"dnsseed.bluematt.me", "bitseed.xf2.org", "dnsseed.bitcoin.dashjr.org", "seed.bitcoin.sipa.be", ""};
-static const string testnet_seeds[] = {"testnet-seed.alexykot.me",
-                                       "testnet-seed.bitcoin.petertodd.org",
-                                       "testnet-seed.bluematt.me",
-                                       "testnet-seed.bitcoin.schildbach.de",
-                                       ""};
+static const string mainnet_seeds[] = {"vmi132448.contaboserver.net"};
+static const string testnet_seeds[] = {"testnet-zen.zencash.io"};
 static const string *seeds = mainnet_seeds;
 
 extern "C" void* ThreadSeeder(void*) {
-  if (!fTestNet){
-    db.Add(CService("kjy2eqzk4zwi5zd3.onion", 8333), true);
-  }
   do {
     for (int i=0; seeds[i] != ""; i++) {
       vector<CNetAddr> ips;
@@ -419,7 +404,6 @@ extern "C" void* ThreadSeeder(void*) {
     }
     Sleep(1800000);
   } while(1);
-  return nullptr;
 }
 
 int main(int argc, char **argv) {
@@ -459,10 +443,10 @@ int main(int argc, char **argv) {
   bool fDNS = true;
   if (opts.fUseTestNet) {
       printf("Using testnet.\n");
-      pchMessageStart[0] = 0x0b;
-      pchMessageStart[1] = 0x11;
-      pchMessageStart[2] = 0x09;
-      pchMessageStart[3] = 0x07;
+      pchMessageStart[0] = 0xFA;
+      pchMessageStart[1] = 0x1A;
+      pchMessageStart[2] = 0x24;
+      pchMessageStart[3] = 0xB6;
       seeds = testnet_seeds;
       fTestNet = true;
   }
