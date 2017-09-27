@@ -389,7 +389,7 @@ extern "C" void* ThreadStats(void*) {
   } while(1);
 }
 
-static const string mainnet_seeds[] = {"btzexplorer.blockhub.info", ""};
+static const string mainnet_seeds[] = {"btzexplorer.blockhub.info", "bitcoinz.ph", "zparty.pl", ""};
 static const string testnet_seeds[] = {""};
 static const string *seeds = mainnet_seeds;
 
