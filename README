@@ -68,6 +68,24 @@ $ iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-port 5353
 If properly configured, this will allow you to run dnsseed in userspace, using
 the -p 5353 option.
 
+DOCKER
+------
+
+Build the docker image by running the following command:
+
+$ docker build -t btcz/bitcoinz-seeder .
+
+Run the docker image with the following command:
+
+$ docker run -d --name bitcoinz-seeder \
+  -p 53:53/udp -p 53:53 btcz/bitcoinz-seeder \
+  -h dnsseed.example.com -n vps.example.com -m email.gmail.com
+
+Run the docker image with a restart policy:
+
+$ docker run -d --restart always --name bitcoinz-seeder \
+  -p 53:53/udp -p 53:53 btcz/bitcoinz-seeder \
+  -h dnsseed.example.com -n vps.example.com -m email.gmail.com
 
 Security Warnings
 -----------------
