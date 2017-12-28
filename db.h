@@ -328,6 +328,7 @@ public:
   bool Get(CServiceResult &ip, int& wait) {
     CRITICAL_BLOCK(cs)
       return Get_(ip, wait);
+    return false;
   }
   void GetMany(std::vector<CServiceResult> &ips, int max, int& wait) {
     CRITICAL_BLOCK(cs) {
