@@ -281,7 +281,7 @@ public:
       } else {
         CAddrDb *db = const_cast<CAddrDb*>(this);
         db->nId = 0;
-        int n;
+        int n = 0;
         READWRITE(n);
         for (int i=0; i<n; i++) {
           CAddrInfo info;
