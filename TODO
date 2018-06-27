@@ -1,0 +1,6 @@
+Bitmark Seeder
+
+* Make discrimination based on clientSubVersion more explicit, as is done with network protocol version
+
+* After crawling substial nubmer of nodes, seeder should have good idea of which is the best fork tip height. Make this best forkheight explicit, and a discrimination factor for nodes which are too far behind
+

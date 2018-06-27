@@ -22,6 +22,7 @@ static const char* ppszTypeName[] =
     "block",
 };
 
+// Same "Magic Bytes" in Bitcoin and Bitmark
 unsigned char pchMessageStart[4] = { 0xf9, 0xbe, 0xb4, 0xd9 };
 
 CMessageHeader::CMessageHeader()

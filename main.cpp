@@ -35,7 +35,7 @@ public:
   CDnsSeedOpts() : nThreads(96), nDnsThreads(4), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false), ipv4_proxy(NULL), ipv6_proxy(NULL) {}
 
   void ParseCommandLine(int argc, char **argv) {
-    static const char *help = "Bitcoin-seeder\n"
+    static const char *help = "Bitmark-seeder\n"
                               "Usage: %s -h <host> -n <ns> [-m <mbox>] [-t <threads>] [-p <port>]\n"
                               "\n"
                               "Options:\n"
@@ -397,18 +397,42 @@ extern "C" void* ThreadStats(void*) {
   return nullptr;
 }
 
-static const string mainnet_seeds[] = {"dnsseed.bluematt.me", "bitseed.xf2.org", "dnsseed.bitcoin.dashjr.org", "seed.bitcoin.sipa.be", ""};
-static const string testnet_seeds[] = {"testnet-seed.alexykot.me",
-                                       "testnet-seed.bitcoin.petertodd.org",
-                                       "testnet-seed.bluematt.me",
-                                       "testnet-seed.bitcoin.schildbach.de",
+// Bitcoin Examples
+//static const string mainnet_seeds[] = {"dnsseed.bluematt.me", "bitseed.xf2.org", "dnsseed.bitcoin.dashjr.org", "seed.bitcoin.sipa.be", ""};
+
+// Bitmark (MARKS) (BTM)  
+//    These names represent sub-domain zones, which must be name-served by delegated name servers.
+// static const string mainnet_seeds[] = {"fertility.bitmark.guru", "fertilidad.bitmark.mx", "xara.zmark.org", "biji.bitmark.one", ""};
+static const string mainnet_seeds[] =  {"da.bitmark.guru",
+					"btmk.bitmark.guru,
+					"biji.bitmark.one", 
+					"shido.bitmark.one", 
+					"da.bitmark.mx", 
+					"xara.zmark.org", 
+					"seeder.dbkeys.net",
+					"fertilidad.bitmark.mx", 
+					""};
+
+// Bitcoin Examples
+//static const string testnet_seeds[] = {"testnet-seed.alexykot.me",
+//                                       "testnet-seed.bitcoin.petertodd.org",
+//                                       "testnet-seed.bluematt.me",
+//                                       "testnet-seed.bitcoin.schildbach.de",
+//                                       ""};
+
+// Bitmark (MARKS) (BTM)  
+static const string testnet_seeds[] = {"tz.bitmark.guru",
+                                       "tz.bitmark.one",
+                                       "tz.bitmark.mx",
                                        ""};
+
 static const string *seeds = mainnet_seeds;
 
 extern "C" void* ThreadSeeder(void*) {
-  if (!fTestNet){
-    db.Add(CService("kjy2eqzk4zwi5zd3.onion", 8333), true);
-  }
+  // Bitmark - there are not TOR / Onion hidden service nodes at the moment; Nov 26'17
+  //if (!fTestNet){
+  //  db.Add(CService("kjy2eqzk4zwi5zd3.onion", 9265), true);
+  //}
   do {
     for (int i=0; seeds[i] != ""; i++) {
       vector<CNetAddr> ips;
