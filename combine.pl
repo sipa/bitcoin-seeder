@@ -58,7 +58,7 @@ for my $file (@ARGV) {
 }
 
 for my $addr (sort { $res->{$b} <=> $res->{$a} } (keys %{$res})) {
-  if ($addr =~ /\A(\d+)\.(\d+)\.(\d+)\.(\d+):8333/) {
+  if ($addr =~ /\A(\d+)\.(\d+)\.(\d+)\.(\d+):28333/) {
     my $a = $1*0x1000000 + $2*0x10000 + $3*0x100 + $4;
     printf "0x%08x %s %g%%\n",$a,$addr,(1-((1-$res->{$addr}) ** (1/$n)))*100;
   }
