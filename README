@@ -7,7 +7,7 @@ of reliable nodes via a built-in DNS server.
 Features:
 * regularly revisits known nodes to check their availability
 * bans nodes after enough failures, or bad behaviour
-* only accepts nodes from v0.16.3.x.
+* only accepts nodes from v0.16.3.15.
 * keeps statistics over (exponential) windows of 2 hours, 8 hours,
   1 day and 1 week, to base decisions on.
 * very low memory (a few tens of megabytes) and cpu requirements.
@@ -26,6 +26,7 @@ need an authorative NS record in example.com's domain record, pointing
 to for example vps.example.com:
 
 $ dig -t NS dnsseed.example.com
+$ dig +short @8.8.8.8 seeder-testnet.cryptozeny.com
 
 ;; ANSWER SECTION
 dnsseed.example.com.   86400    IN      NS     vps.example.com.
@@ -33,6 +34,7 @@ dnsseed.example.com.   86400    IN      NS     vps.example.com.
 On the system vps.example.com, you can now run dnsseed:
 
 ./dnsseed -h dnsseed.example.com -n vps.example.com
+./dnsseed --testnet -h seeder-testnet.cryptozeny.com -n ns1.vultr.com -m cryptozeny@gmail.com
 
 If you want the DNS server to report SOA records, please provide an
 e-mail address (with the @ part replaced by .) using -m.
