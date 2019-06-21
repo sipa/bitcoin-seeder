@@ -1,4 +1,4 @@
-CXXFLAGS = -O3 -g0 -march=native
+CXXFLAGS = -O3 -g0
 LDFLAGS = $(CXXFLAGS)
 
 dnsseed: dns.o bitcoin.o netbase.o protocol.o db.o main.o util.o
