@@ -1,7 +1,7 @@
 SUGARCHAIN-SEEDER
 ==============
 
-Sugarchain-seeder is a crawler for the Sugarchain network, which exposes a list of reliable nodes via a built-in DNS server.
+sugarchain-seeder is a crawler for the Sugarchain network, which exposes a list of reliable nodes via a built-in DNS server.
 
 Features:
 * regularly revisits known nodes to check their availability
@@ -9,7 +9,7 @@ Features:
 * accepts nodes from Yumekawa v0.16.3.x (protocol version `70015`) to request new IP addresses.
 * keeps statistics over (exponential) windows of 2 hours, 8 hours, 1 day and 1 week, to base decisions on.
 * very low memory (a few tens of megabytes) and cpu requirements.
-* crawlers run in parallel (by default 96 threads simultaneously).
+* crawlers run in parallel (by default `96` threads simultaneously).
 
 INSTALLATION
 ------------
@@ -37,14 +37,14 @@ dig -t NS seed-testnet.sugarchain.org
 seed-testnet.sugarchain.org. 21599 IN	NS	ns-testnet.sugarchain.org.
 ```
 
-On the system `ns.sugarchain.org`, you can now run dnsseed with root privileged to use port 53
+On the system `ns-testnet.sugarchain.org`, you can now run dnsseed with root privileged to use port 53
 ```bash
 sudo ./dnsseed --testnet -h seed-testnet.sugarchain.org -n ns-testnet.sugarchain.org -m sugarchain.dev.gmail.com
 ```
 
-If you want the DNS server to report SOA records, please provide an e-mail address (with the @ part replaced by .) using -m.
+If you want the DNS server to report SOA records, please provide an e-mail address (with the `@` part replaced by `.`) using `-m`.
 
-Check port 53 should be opened
+Check if port 53 opened
 ```bash
 sudo netstat -nulp | grep 53
 ```
@@ -54,7 +54,7 @@ Check if it works
 watch -n1 dig +short -t A seed-testnet.sugarchain.org @1.1.1.1
 ```
 
-Run Yumekawa node with
+Run Sugarchain node on another computer
 ```bash
 ./src/sugarchaind -testnet -dns=1 -dnsseed=1 -forcednsseed=1 -listen=1 -daemon
 ```
