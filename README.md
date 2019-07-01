@@ -59,6 +59,24 @@ Run Sugarchain node on another computer
 ./src/sugarchaind -testnet -dns=1 -dnsseed=1 -forcednsseed=1 -listen=1 -daemon
 ```
 
+EXAMPLE
+-------
+Adding following command with `sudo crontab -e` as `@reboot`. On amazon AWS EC2, run with `crontab -e` (without sudo because the username is ubuntu)
+
+`seed-testnet.cryptozeny.com`
+```bash
+sudo ./sugarchain-seeder/dnsseed --testnet -h seed-testnet.cryptozeny.com -n ns-testnet.cryptozeny.com -m cryptozeny.gmail.com
+```
+
+`seed-testnet.sugarchain.org`
+```bash
+sudo ./sugarchain-seeder/dnsseed --testnet -h seed-testnet.sugarchain.org -n ns-testnet.sugarchain.org -m sugarchain.dev.gmail.com
+```
+
+CRON
+----
+
+
 
 RUNNING AS NON-ROOT
 -------------------
