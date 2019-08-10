@@ -150,10 +150,12 @@ public:
         filter_whitelist.insert(NODE_NETWORK);
         filter_whitelist.insert(NODE_NETWORK | NODE_BLOOM);
         filter_whitelist.insert(NODE_NETWORK | NODE_WITNESS);
+        filter_whitelist.insert(NODE_NETWORK | NODE_WITNESS | NODE_COMPACT_FILTERS);
         filter_whitelist.insert(NODE_NETWORK | NODE_WITNESS | NODE_BLOOM);
         filter_whitelist.insert(NODE_NETWORK_LIMITED);
         filter_whitelist.insert(NODE_NETWORK_LIMITED | NODE_BLOOM);
         filter_whitelist.insert(NODE_NETWORK_LIMITED | NODE_WITNESS);
+        filter_whitelist.insert(NODE_NETWORK_LIMITED | NODE_WITNESS | NODE_COMPACT_FILTERS);
         filter_whitelist.insert(NODE_NETWORK_LIMITED | NODE_WITNESS | NODE_BLOOM);
     }
     if (host != NULL && ns == NULL) showHelp = true;
