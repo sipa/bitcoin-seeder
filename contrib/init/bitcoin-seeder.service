@@ -1,0 +1,14 @@
+[Unit]
+Description=Bitcoin Seeder
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/dnsseed -h dnsseed.example.com -n vps.example.com -m satoshin.gmx.com
+User=root
+Group=root
+
+Restart=on-failure
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

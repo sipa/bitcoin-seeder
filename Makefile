@@ -11,3 +11,18 @@ dns.o: dns.c
 	gcc -pthread -std=c99 $(CXXFLAGS) dns.c -Wall -c -o dns.o
 
 %.o: %.cpp
+
+.PHONY: clean
+clean:
+	rm -f dnsseed *.o
+
+PREFIX = /usr/local
+
+.PHONY: install
+install:
+	mkdir -p $(DESTDIR)$(PREFIX)/bin
+	cp dnsseed $(DESTDIR)$(PREFIX)/bin
+
+.PHONY: uninstall
+uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/bin/dnsseed
