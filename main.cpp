@@ -406,10 +406,10 @@ static const string mainnet_seeds[] = {"explorer.sugarchain.org",
                                        "3pool.sugarchain.org",
                                        ""};
 
-static const string testnet_seeds[] = {"explorer-testnet.cryptozeny.com",
-                                       "pool-testnet.cryptozeny.com",
-                                       "pool-testnet2.cryptozeny.com",
-                                       "pool-testnet3.cryptozeny.com",
+static const string testnet_seeds[] = {"1explorer-testnet.cryptozeny.com",
+                                       "2explorer-testnet.cryptozeny.com",
+                                       "1pool-testnet.cryptozeny.com",
+                                       "2pool-testnet.cryptozeny.com",
                                        ""};
 static const string *seeds = mainnet_seeds;
 
