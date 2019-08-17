@@ -26,20 +26,20 @@ make -j$(nproc)
 USAGE
 -----
 
-Assuming you want to run a dns seed on `seed-testnet.sugarchain.org`, you will need an authorative NS record in `sugarchain.org`'s domain record, pointing to for example `ns-testnet.sugarchain.org`:
+On the system `1ns-testnet.cryptozeny.com`, you can now run dnsseed with root privileged to use port 53 (`UDP`)
+```bash
+sudo ./dnsseed --testnet -h 1seed-testnet.cryptozeny.com -n 1ns-testnet.cryptozeny.com -m cryptozeny.gmail.com
+```
+
+Assuming you want to run a dns seed on `1seed-testnet.cryptozeny.com`, you will need an authorative NS record in `sugarchain.org`'s domain record, pointing to for example `1ns-testnet.cryptozeny.com`:
 
 ```bash
-dig -t NS seed-testnet.sugarchain.org
+dig -t NS 1seed-testnet.cryptozeny.com
 ```
 
 ```
 ;; ANSWER SECTION:
-seed-testnet.sugarchain.org. 21599 IN	NS	ns-testnet.sugarchain.org.
-```
-
-On the system `ns-testnet.sugarchain.org`, you can now run dnsseed with root privileged to use port 53
-```bash
-sudo ./dnsseed --testnet -h seed-testnet.sugarchain.org -n ns-testnet.sugarchain.org -m sugarchain.dev.gmail.com
+1seed-testnet.cryptozeny.com. 21599 IN	NS	1ns-testnet.cryptozeny.com.
 ```
 
 If you want the DNS server to report SOA records, please provide an e-mail address (with the `@` part replaced by `.`) using `-m`.
@@ -47,11 +47,13 @@ If you want the DNS server to report SOA records, please provide an e-mail addre
 Check if port 53 opened
 ```bash
 sudo netstat -nulp | grep 53
+
+udp6       0      0 :::53                   :::*                                10949/dnsseed
 ```
 
 Check if it works
 ```bash
-watch -n1 dig +short -t A seed-testnet.sugarchain.org @1.1.1.1
+watch -n1 dig +short -t A 1seed-testnet.cryptozeny.com @1.1.1.1
 ```
 
 Run Sugarchain node on another computer
@@ -59,24 +61,14 @@ Run Sugarchain node on another computer
 ./src/sugarchaind -testnet -dns=1 -dnsseed=1 -forcednsseed=1 -listen=1 -daemon
 ```
 
-EXAMPLE
--------
-Adding following command with `sudo crontab -e` as `@reboot`. On amazon AWS EC2, run with `crontab -e` (without sudo because the username is ubuntu)
-
-`seed-testnet.cryptozeny.com`
-```bash
-sudo ./sugarchain-seeder/dnsseed --testnet -h seed-testnet.cryptozeny.com -n ns-testnet.cryptozeny.com -m cryptozeny.gmail.com
-```
-
-`seed-testnet.sugarchain.org`
-```bash
-sudo ./sugarchain-seeder/dnsseed --testnet -h seed-testnet.sugarchain.org -n ns-testnet.sugarchain.org -m sugarchain.dev.gmail.com
-```
-
 CRON
 ----
+Adding following command with `sudo crontab -e` as `@reboot`. On amazon AWS EC2, run with `crontab -e` (without sudo because the username is ubuntu)
 
-
+`1seed-testnet.cryptozeny.com`
+```bash
+@reboot sudo $HOME/sugarchain-seeder/dnsseed --testnet -h 1seed-testnet.cryptozeny.com -n 1ns-testnet.cryptozeny.com -m cryptozeny.gmail.com
+```
 
 RUNNING AS NON-ROOT
 -------------------
