@@ -400,10 +400,10 @@ extern "C" void* ThreadStats(void*) {
   return nullptr;
 }
 
-static const string mainnet_seeds[] = {"explorer.sugarchain.org",
+static const string mainnet_seeds[] = {"1explorer.sugarchain.org",
+                                       "2explorer.sugarchain.org",
                                        "1pool.sugarchain.org",
                                        "2pool.sugarchain.org",
-                                       "3pool.sugarchain.org",
                                        ""};
 
 static const string testnet_seeds[] = {"1explorer-testnet.cryptozeny.com",
