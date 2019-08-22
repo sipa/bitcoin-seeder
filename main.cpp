@@ -147,16 +147,16 @@ public:
       }
     }
     if (filter_whitelist.empty()) {
-        filter_whitelist.insert(NODE_NETWORK);
-        filter_whitelist.insert(NODE_NETWORK | NODE_BLOOM);
-        filter_whitelist.insert(NODE_NETWORK | NODE_WITNESS);
-        filter_whitelist.insert(NODE_NETWORK | NODE_WITNESS | NODE_COMPACT_FILTERS);
-        filter_whitelist.insert(NODE_NETWORK | NODE_WITNESS | NODE_BLOOM);
-        filter_whitelist.insert(NODE_NETWORK_LIMITED);
-        filter_whitelist.insert(NODE_NETWORK_LIMITED | NODE_BLOOM);
-        filter_whitelist.insert(NODE_NETWORK_LIMITED | NODE_WITNESS);
-        filter_whitelist.insert(NODE_NETWORK_LIMITED | NODE_WITNESS | NODE_COMPACT_FILTERS);
-        filter_whitelist.insert(NODE_NETWORK_LIMITED | NODE_WITNESS | NODE_BLOOM);
+        filter_whitelist.insert(NODE_NETWORK); // x1
+        filter_whitelist.insert(NODE_NETWORK | NODE_BLOOM); // x5
+        filter_whitelist.insert(NODE_NETWORK | NODE_WITNESS); // x9
+        filter_whitelist.insert(NODE_NETWORK | NODE_WITNESS | NODE_COMPACT_FILTERS); // x49
+        filter_whitelist.insert(NODE_NETWORK | NODE_WITNESS | NODE_BLOOM); // xd
+        filter_whitelist.insert(NODE_NETWORK_LIMITED); // x400
+        filter_whitelist.insert(NODE_NETWORK_LIMITED | NODE_BLOOM); // x404
+        filter_whitelist.insert(NODE_NETWORK_LIMITED | NODE_WITNESS); // x408
+        filter_whitelist.insert(NODE_NETWORK_LIMITED | NODE_WITNESS | NODE_COMPACT_FILTERS); // x448
+        filter_whitelist.insert(NODE_NETWORK_LIMITED | NODE_WITNESS | NODE_BLOOM); // x40c
     }
     if (host != NULL && ns == NULL) showHelp = true;
     if (showHelp) fprintf(stderr, help, argv[0]);
