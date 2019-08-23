@@ -23,6 +23,17 @@ cd sugarchain-seeder && \
 make -j$(nproc)
 ```
 
+REMOVE
+------
+
+```
+sudo killall dnsseed ; \
+cd && sudo rm -f dnsseed.dat && sudo rm -f dnsseed.dump && sudo rm -f dnsstats.log && \
+cd && cd sugarchain-seeder/ && sudo rm -f dnsseed.dat && sudo rm -f dnsseed.dump && sudo rm -f dnsstats.log && \
+cd && rm -rf sugarchain-seeder/ && \
+sudo netstat -nulp | grep 53
+```
+
 USAGE
 -----
 
