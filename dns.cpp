@@ -16,17 +16,11 @@
 
 #define BUFLEN 512
 
-#if defined IP_RECVDSTADDR
+#if defined(IP_RECVDSTADDR)
 # define DSTADDR_SOCKOPT IP_RECVDSTADDR
 # define DSTADDR_DATASIZE (CMSG_SPACE(sizeof(struct in6_addr)))
 # define dstaddr(x) (CMSG_DATA(x))
-#elif defined IPV6_PKTINFO
-struct in6_pktinfo
-  {
-    struct in6_addr ipi6_addr;	/* src/dst IPv6 address */
-    unsigned int ipi6_ifindex;	/* send/recv interface index */
-  };
-
+#elif defined(IPV6_PKTINFO)
 # define DSTADDR_SOCKOPT IPV6_PKTINFO
 # define DSTADDR_DATASIZE (CMSG_SPACE(sizeof(struct in6_pktinfo)))
 # define dstaddr(x) (&(((struct in6_pktinfo *)(CMSG_DATA(x)))->ipi6_addr))
@@ -109,7 +103,7 @@ int static parse_name(const unsigned char **inpos, const unsigned char *inend, c
 // -3: two subsequent dots
 int static write_name(unsigned char** outpos, const unsigned char *outend, const char *name, int offset) {
   while (*name != 0) {
-    char *dot = strchr(name, '.');
+    const char *dot = strchr(name, '.');
     const char *fin = dot;
     if (!dot) fin = name + strlen(name);
     if (fin - name > 63) return -1;
@@ -138,16 +132,21 @@ int static write_record(unsigned char** outpos, const unsigned char *outend, con
   int error = 0;
   // name
   int ret = write_name(outpos, outend, name, offset);
-  if (ret) { error = ret; goto error; }
-  if (outend - *outpos < 8) { error = -4; goto error; }
-  // type
-  *((*outpos)++) = typ >> 8; *((*outpos)++) = typ & 0xFF;
-  // class
-  *((*outpos)++) = cls >> 8; *((*outpos)++) = cls & 0xFF;
-  // ttl
-  *((*outpos)++) = (ttl >> 24) & 0xFF; *((*outpos)++) = (ttl >> 16) & 0xFF; *((*outpos)++) = (ttl >> 8) & 0xFF; *((*outpos)++) = ttl & 0xFF;
-  return 0;
-error:
+  if (ret) {
+    error = ret;
+  } else {
+    if (outend - *outpos < 8) {
+      error = -4;
+    } else {
+      // type
+      *((*outpos)++) = typ >> 8; *((*outpos)++) = typ & 0xFF;
+      // class
+      *((*outpos)++) = cls >> 8; *((*outpos)++) = cls & 0xFF;
+      // ttl
+      *((*outpos)++) = (ttl >> 24) & 0xFF; *((*outpos)++) = (ttl >> 16) & 0xFF; *((*outpos)++) = (ttl >> 8) & 0xFF; *((*outpos)++) = ttl & 0xFF;
+      return 0;
+    }
+  }
   *outpos = oldpos;
   return error;
 }
@@ -160,14 +159,16 @@ int static write_record_a(unsigned char** outpos, const unsigned char *outend, c
   int error = 0;
   int ret = write_record(outpos, outend, name, offset, TYPE_A, cls, ttl);
   if (ret) return ret;
-  if (outend - *outpos < 6) { error = -5; goto error; }
-  // rdlength
-  *((*outpos)++) = 0; *((*outpos)++) = 4;
-  // rdata
-  for (int i=0; i<4; i++)
-    *((*outpos)++) = ip->data.v4[i];
-  return 0;
-error:
+  if (outend - *outpos < 6) {
+    error = -5;
+  } else {
+    // rdlength
+    *((*outpos)++) = 0; *((*outpos)++) = 4;
+    // rdata
+    for (int i=0; i<4; i++)
+      *((*outpos)++) = ip->data.v4[i];
+    return 0;
+  }
   *outpos = oldpos;
   return error;
 }
@@ -179,61 +180,90 @@ int static write_record_aaaa(unsigned char** outpos, const unsigned char *outend
   int error = 0;
   int ret = write_record(outpos, outend, name, offset, TYPE_AAAA, cls, ttl);
   if (ret) return ret;
-  if (outend - *outpos < 6) { error = -5; goto error; }
-  // rdlength
-  *((*outpos)++) = 0; *((*outpos)++) = 16;
-  // rdata
-  for (int i=0; i<16; i++)
-    *((*outpos)++) = ip->data.v6[i];
-  return 0;
-error:
+  if (outend - *outpos < 6) {
+    error = -5;
+  } else {
+    // rdlength
+    *((*outpos)++) = 0; *((*outpos)++) = 16;
+    // rdata
+    for (int i=0; i<16; i++)
+      *((*outpos)++) = ip->data.v6[i];
+    return 0;
+  }
   *outpos = oldpos;
   return error;
 }
 
-int static write_record_ns(unsigned char** outpos, const unsigned char *outend, char *name, int offset, dns_class cls, int ttl, const char *ns) {
+int static write_record_ns(unsigned char** outpos, const unsigned char *outend, const char *name, int offset, dns_class cls, int ttl, const char *ns) {
   unsigned char *oldpos = *outpos;
   int ret = write_record(outpos, outend, name, offset, TYPE_NS, cls, ttl);
   if (ret) return ret;
   int error = 0;
-  if (outend - *outpos < 2) { error = -5; goto error; }
-  (*outpos) += 2;
-  unsigned char *curpos = *outpos;
-  ret = write_name(outpos, outend, ns, -1);
-  if (ret) { error = ret; goto error; }
-  curpos[-2] = (*outpos - curpos) >> 8;
-  curpos[-1] = (*outpos - curpos) & 0xFF;
-  return 0;
-error:
+  if (outend - *outpos < 2) {
+    error = -5;
+  } else {
+    (*outpos) += 2;
+    unsigned char *curpos = *outpos;
+    ret = write_name(outpos, outend, ns, -1);
+    if (ret) {
+      error = ret;
+    } else {
+      curpos[-2] = (*outpos - curpos) >> 8;
+      curpos[-1] = (*outpos - curpos) & 0xFF;
+      return 0;
+    }
+  }
   *outpos = oldpos;
   return error;
 }
 
-int static write_record_soa(unsigned char** outpos, const unsigned char *outend, char *name, int offset, dns_class cls, int ttl, const char* mname, const char *rname,
+int static write_record_soa(unsigned char** outpos, const unsigned char *outend, const char *name, int offset, dns_class cls, int ttl, const char* mname, const char *rname,
                      uint32_t serial, uint32_t refresh, uint32_t retry, uint32_t expire, uint32_t minimum) {
   unsigned char *oldpos = *outpos;
   int ret = write_record(outpos, outend, name, offset, TYPE_SOA, cls, ttl);
   if (ret) return ret;
   int error = 0;
-  if (outend - *outpos < 2) { error = -5; goto error; }
-  (*outpos) += 2;
-  unsigned char *curpos = *outpos;
-  ret = write_name(outpos, outend, mname, -1);
-  if (ret) { error = ret; goto error; }
-  ret = write_name(outpos, outend, rname, -1);
-  if (ret) { error = ret; goto error; }
-  if (outend - *outpos < 20) { error = -5; goto error; }
-  *((*outpos)++) = (serial  >> 24) & 0xFF; *((*outpos)++) = (serial  >> 16) & 0xFF; *((*outpos)++) = (serial  >> 8) & 0xFF; *((*outpos)++) = serial  & 0xFF;
-  *((*outpos)++) = (refresh >> 24) & 0xFF; *((*outpos)++) = (refresh >> 16) & 0xFF; *((*outpos)++) = (refresh >> 8) & 0xFF; *((*outpos)++) = refresh & 0xFF;
-  *((*outpos)++) = (retry   >> 24) & 0xFF; *((*outpos)++) = (retry   >> 16) & 0xFF; *((*outpos)++) = (retry   >> 8) & 0xFF; *((*outpos)++) = retry   & 0xFF;
-  *((*outpos)++) = (expire  >> 24) & 0xFF; *((*outpos)++) = (expire  >> 16) & 0xFF; *((*outpos)++) = (expire  >> 8) & 0xFF; *((*outpos)++) = expire  & 0xFF;
-  *((*outpos)++) = (minimum >> 24) & 0xFF; *((*outpos)++) = (minimum >> 16) & 0xFF; *((*outpos)++) = (minimum >> 8) & 0xFF; *((*outpos)++) = minimum & 0xFF;
-  curpos[-2] = (*outpos - curpos) >> 8;
-  curpos[-1] = (*outpos - curpos) & 0xFF;
-  return 0;
-error:
+  if (outend - *outpos < 2) {
+    error = -5;
+  } else {
+    (*outpos) += 2;
+    unsigned char *curpos = *outpos;
+    ret = write_name(outpos, outend, mname, -1);
+    if (ret) {
+      error = ret;
+    } else {
+      ret = write_name(outpos, outend, rname, -1);
+      if (ret) {
+        error = ret;
+      } else {
+        if (outend - *outpos < 20) {
+          error = -5;
+        } else {
+          *((*outpos)++) = (serial  >> 24) & 0xFF; *((*outpos)++) = (serial  >> 16) & 0xFF; *((*outpos)++) = (serial  >> 8) & 0xFF; *((*outpos)++) = serial  & 0xFF;
+          *((*outpos)++) = (refresh >> 24) & 0xFF; *((*outpos)++) = (refresh >> 16) & 0xFF; *((*outpos)++) = (refresh >> 8) & 0xFF; *((*outpos)++) = refresh & 0xFF;
+          *((*outpos)++) = (retry   >> 24) & 0xFF; *((*outpos)++) = (retry   >> 16) & 0xFF; *((*outpos)++) = (retry   >> 8) & 0xFF; *((*outpos)++) = retry   & 0xFF;
+          *((*outpos)++) = (expire  >> 24) & 0xFF; *((*outpos)++) = (expire  >> 16) & 0xFF; *((*outpos)++) = (expire  >> 8) & 0xFF; *((*outpos)++) = expire  & 0xFF;
+          *((*outpos)++) = (minimum >> 24) & 0xFF; *((*outpos)++) = (minimum >> 16) & 0xFF; *((*outpos)++) = (minimum >> 8) & 0xFF; *((*outpos)++) = minimum & 0xFF;
+          curpos[-2] = (*outpos - curpos) >> 8;
+          curpos[-1] = (*outpos - curpos) & 0xFF;
+          return 0;
+        }
+      }
+    }
+  }
   *outpos = oldpos;
   return error;
+}
+
+static ssize_t set_error(unsigned char* outbuf, int error) {
+  // set error
+  outbuf[3] |= error & 0xF;
+  // set counts
+  outbuf[4] = 0;  outbuf[5] = 0;
+  outbuf[6] = 0;  outbuf[7] = 0;
+  outbuf[8] = 0;  outbuf[9] = 0;
+  outbuf[10] = 0; outbuf[11] = 0;
+  return 12;
 }
 
 ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insize, unsigned char* outbuf) {
@@ -249,27 +279,27 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   // clear error
   outbuf[3] &= ~15;
   // check qr
-  if (inbuf[2] & 128) { /* printf("Got response?\n"); */ error = 1; goto error; }
+  if (inbuf[2] & 128) return set_error(outbuf, 1); /* printf("Got response?\n"); */
   // check opcode
-  if (((inbuf[2] & 120) >> 3) != 0) { /* printf("Opcode nonzero?\n"); */ error = 4; goto error; }
+  if (((inbuf[2] & 120) >> 3) != 0) return set_error(outbuf, 1); /* printf("Opcode nonzero?\n"); */
   // unset TC
   outbuf[2] &= ~2;
   // unset RA
   outbuf[3] &= ~128;
   // check questions
   int nquestion = (inbuf[4] << 8) + inbuf[5];
-  if (nquestion == 0) { /* printf("No questions?\n"); */ error = 0; goto error; }
-  if (nquestion > 1) { /* printf("Multiple questions %i?\n", nquestion); */ error = 4; goto error; }
+  if (nquestion == 0) return set_error(outbuf, 0); /* printf("No questions?\n"); */
+  if (nquestion > 1) return set_error(outbuf, 4); /* printf("Multiple questions %i?\n", nquestion); */
   const unsigned char *inpos = inbuf + 12;
   const unsigned char *inend = inbuf + insize;
   char name[256];
   int offset = inpos - inbuf;
   int ret = parse_name(&inpos, inend, inbuf, name, 256);
-  if (ret == -1) { error = 1; goto error; }
-  if (ret == -2) { error = 5; goto error; }
+  if (ret == -1) return set_error(outbuf, 1);
+  if (ret == -2) return set_error(outbuf, 5);
   int namel = strlen(name), hostl = strlen(opt->host);
-  if (strcasecmp(name, opt->host) && (namel<hostl+2 || name[namel-hostl-1]!='.' || strcasecmp(name+namel-hostl,opt->host))) { error = 5; goto error; }
-  if (inend - inpos < 4) { error = 1; goto error; }
+  if (strcasecmp(name, opt->host) && (namel<hostl+2 || name[namel-hostl-1]!='.' || strcasecmp(name+namel-hostl,opt->host))) return set_error(outbuf, 5);
+  if (inend - inpos < 4) return set_error(outbuf, 1);
   // copy question to output
   memcpy(outbuf+12, inbuf+12, inpos+4 - (inbuf+12));
   // set counts
@@ -366,15 +396,6 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   outbuf[2] |= 4;
   
   return outpos - outbuf;
-error:
-  // set error
-  outbuf[3] |= error & 0xF;
-  // set counts
-  outbuf[4] = 0;  outbuf[5] = 0;
-  outbuf[6] = 0;  outbuf[7] = 0;
-  outbuf[8] = 0;  outbuf[9] = 0;
-  outbuf[10] = 0; outbuf[11] = 0;
-  return 12;
 }
 
 static int listenSocket = -1;
