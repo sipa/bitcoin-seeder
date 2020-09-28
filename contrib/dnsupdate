@@ -1,0 +1,42 @@
+#!/bin/bash
+# This queries the bitcoin-seeder via dns on port 5353 and 
+# puts the result in the dns zone of a Bind9.
+# bitcoin-seeder: https://github.com/sipa/bitcoin-seeder
+
+set -euo pipefail
+
+# Zone to request from bintcoin-seeder
+ZONE=dnsseed.emzy.de
+# Filters to fetch
+FILTERS='x1 x5 x9 xd x49 x400 x404 x408 x40c x448'
+
+# Fetch and update A and AAAA records @ of the zone
+(
+  echo server localhost
+  echo zone ${ZONE}
+  echo update delete ${ZONE} a
+  echo update delete ${ZONE} aaaa
+  for proto in A AAAA ; do
+        dig +noall +answer -t ${proto} -p 15353 @52.37.101.214 ${ZONE} | \
+        awk '{ print "update add "$1" 3600 "$4" "$5"" }'
+
+  done
+  echo send
+) | \
+nsupdate -v
+
+# Fetch and update A and AAAA records of all available FILTER domain names
+for filter in ${FILTERS} ; do
+        (
+          echo server localhost
+          echo zone ${ZONE}
+          echo update delete ${filter}.${ZONE} a
+          echo update delete ${filter}.${ZONE} aaaa
+          for proto in A AAAA ; do
+                dig +noall +answer -t ${proto} -p 15353 @52.37.101.214 ${filter}.${ZONE} | \
+                awk '{ print "update add "$1" 3600 "$4" "$5"" }'
+          done
+          echo send
+        ) | \
+        nsupdate -v
+done
