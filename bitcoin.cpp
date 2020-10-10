@@ -221,9 +221,11 @@ public:
     int64 now;
     while (now = time(NULL), ban == 0 && (doneAfter == 0 || doneAfter > now) && sock != INVALID_SOCKET) {
       char pchBuf[0x10000];
-      fd_set set;
-      FD_ZERO(&set);
-      FD_SET(sock,&set);
+      fd_set read_set, except_set;
+      FD_ZERO(&read_set);
+      FD_ZERO(&except_set);
+      FD_SET(sock,&read_set);
+      FD_SET(sock,&except_set);
       struct timeval wa;
       if (doneAfter) {
         wa.tv_sec = doneAfter - now;
@@ -232,7 +234,7 @@ public:
         wa.tv_sec = GetTimeout();
         wa.tv_usec = 0;
       }
-      int ret = select(sock+1, &set, NULL, &set, &wa);
+      int ret = select(sock+1, &read_set, NULL, &except_set, &wa);
       if (ret != 1) {
         if (!doneAfter) res = false;
         break;
