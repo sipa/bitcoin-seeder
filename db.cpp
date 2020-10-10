@@ -141,12 +141,8 @@ void CAddrDb::Add_(const CAddress &addr, bool force) {
   }
   if (ipToId.count(ipp)) {
     CAddrInfo &ai = idToInfo[ipToId[ipp]];
-    if (addr.nTime > ai.lastTry || ai.services != addr.nServices)
-    {
-      ai.lastTry = addr.nTime;
-      ai.services |= addr.nServices;
-//      printf("%s: updated\n", ToString(addr).c_str());
-    }
+    if (addr.nTime > ai.lastTry) ai.lastTry = addr.nTime;
+    // Do not update ai.nServices (data from VERSION from the peer itself is better than random ADDR rumours).
     if (force) {
       ai.ignoreTill = 0;
     }
