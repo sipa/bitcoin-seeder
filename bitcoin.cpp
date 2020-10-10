@@ -275,9 +275,13 @@ public:
   int GetStartingHeight() {
     return nStartingHeight;
   }
+
+  uint64_t GetServices() {
+    return you.nServices;
+  }
 };
 
-bool TestNode(const CService &cip, int &ban, int &clientV, std::string &clientSV, int &blocks, vector<CAddress>* vAddr) {
+bool TestNode(const CService &cip, int &ban, int &clientV, std::string &clientSV, int &blocks, vector<CAddress>* vAddr, uint64_t& services) {
   try {
     CNode node(cip, vAddr);
     bool ret = node.Run();
@@ -289,6 +293,7 @@ bool TestNode(const CService &cip, int &ban, int &clientV, std::string &clientSV
     clientV = node.GetClientVersion();
     clientSV = node.GetClientSubVersion();
     blocks = node.GetStartingHeight();
+    services = node.GetServices();
 //  printf("%s: %s!!!\n", cip.ToString().c_str(), ret ? "GOOD" : "BAD");
     return ret;
   } catch(std::ios_base::failure& e) {
