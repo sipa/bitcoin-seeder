@@ -36,7 +36,9 @@ CMessageHeader::CMessageHeader()
 CMessageHeader::CMessageHeader(const char* pszCommand, unsigned int nMessageSizeIn)
 {
     memcpy(pchMessageStart, ::pchMessageStart, sizeof(pchMessageStart));
-    strncpy(pchCommand, pszCommand, COMMAND_SIZE);
+    int command_len = strlen(pszCommand);
+    memcpy(pchCommand, pszCommand, command_len);
+    memset(pchCommand + command_len, 0, COMMAND_SIZE - command_len);
     nMessageSize = nMessageSizeIn;
     nChecksum = 0;
 }
