@@ -180,7 +180,7 @@ int static write_record_aaaa(unsigned char** outpos, const unsigned char *outend
   int error = 0;
   int ret = write_record(outpos, outend, name, offset, TYPE_AAAA, cls, ttl);
   if (ret) return ret;
-  if (outend - *outpos < 6) {
+  if (outend - *outpos < 18) {
     error = -5;
   } else {
     // rdlength
