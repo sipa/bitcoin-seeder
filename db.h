@@ -282,7 +282,7 @@ public:
       } else {
         CAddrDb *db = const_cast<CAddrDb*>(this);
         db->nId = 0;
-        int n;
+        int n = 0;
         READWRITE(n);
         for (int i=0; i<n; i++) {
           CAddrInfo info;
@@ -329,6 +329,7 @@ public:
   bool Get(CServiceResult &ip, int& wait) {
     CRITICAL_BLOCK(cs)
       return Get_(ip, wait);
+    return false;
   }
   void GetMany(std::vector<CServiceResult> &ips, int max, int& wait) {
     CRITICAL_BLOCK(cs) {

@@ -82,7 +82,7 @@ void static inline Sleep(int nMilliSec) {
 
 std::string vstrprintf(const std::string &format, va_list ap);
 
-std::string static inline strprintf(const std::string &format, ...) {
+std::string static inline strprintf(const std::string format, ...) {
     va_list arg_ptr;
     va_start(arg_ptr, format);
     std::string ret = vstrprintf(format, arg_ptr);
