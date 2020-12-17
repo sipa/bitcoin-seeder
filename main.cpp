@@ -28,11 +28,12 @@ public:
   const char *ns;
   const char *host;
   const char *tor;
+  const char *ip_addr;
   const char *ipv4_proxy;
   const char *ipv6_proxy;
   std::set<uint64_t> filter_whitelist;
 
-  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false), ipv4_proxy(NULL), ipv6_proxy(NULL) {}
+  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false), ipv4_proxy(NULL), ipv6_proxy(NULL) {}
 
   void ParseCommandLine(int argc, char **argv) {
     static const char *help = "Bitcoin-seeder\n"
@@ -44,6 +45,7 @@ public:
                               "-m <mbox>       E-Mail address reported in SOA records\n"
                               "-t <threads>    Number of crawlers to run in parallel (default 96)\n"
                               "-d <threads>    Number of DNS server threads (default 4)\n"
+                              "-a <address>    Address to listen on (default ::)\n"
                               "-p <port>       UDP port to listen on (default 53)\n"
                               "-o <ip:port>    Tor proxy IP/Port\n"
                               "-i <ip:port>    IPV4 SOCKS5 proxy IP/Port\n"
@@ -63,6 +65,7 @@ public:
         {"mbox", required_argument, 0, 'm'},
         {"threads", required_argument, 0, 't'},
         {"dnsthreads", required_argument, 0, 'd'},
+        {"address", required_argument, 0, 'a'},
         {"port", required_argument, 0, 'p'},
         {"onion", required_argument, 0, 'o'},
         {"proxyipv4", required_argument, 0, 'i'},
@@ -75,7 +78,7 @@ public:
         {0, 0, 0, 0}
       };
       int option_index = 0;
-      int c = getopt_long(argc, argv, "h:n:m:t:p:d:o:i:k:w:", long_options, &option_index);
+      int c = getopt_long(argc, argv, "h:n:m:t:a:p:d:o:i:k:w:", long_options, &option_index);
       if (c == -1) break;
       switch (c) {
         case 'h': {
@@ -102,6 +105,18 @@ public:
         case 'd': {
           int n = strtol(optarg, NULL, 10);
           if (n > 0 && n < 1000) nDnsThreads = n;
+          break;
+        }
+
+        case 'a': {
+          if (strchr(optarg, ':')==NULL) {
+            char* ip4_addr = (char*) malloc(strlen(optarg)+8);
+            strcpy(ip4_addr, "::FFFF:");
+            strcat(ip4_addr, optarg);
+            ip_addr = ip4_addr;
+          } else {
+            ip_addr = optarg;
+          }
           break;
         }
 
@@ -261,6 +276,7 @@ public:
     dns_opt.datattl = 3600;
     dns_opt.nsttl = 40000;
     dns_opt.cb = GetIPList;
+    dns_opt.addr = opts->ip_addr;
     dns_opt.port = opts->nPort;
     dns_opt.nRequests = 0;
     dbQueries = 0;
