@@ -60,3 +60,7 @@ $ iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-port 5353
 
 If properly configured, this will allow you to run dnsseed in userspace, using
 the -p 5353 option.
+
+Another solution is allowing a binary to bind to ports < 1024 with setcap (IPv6 access-safe)
+
+$ setcap 'cap_net_bind_service=+ep' /path/to/dnsseed
