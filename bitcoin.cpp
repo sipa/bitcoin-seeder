@@ -1,5 +1,6 @@
 #include <algorithm>
 
+#include "coin.h"
 #include "db.h"
 #include "netbase.h"
 #include "protocol.h"
@@ -314,4 +315,3 @@ int main(void) {
   printf("ret=%s ban=%i vAddr.size()=%i\n", ret ? "good" : "bad", ban, (int)vAddr.size());
 }
 */
-
