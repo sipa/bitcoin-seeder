@@ -14,7 +14,7 @@
 
 using namespace std;
 
-bool fTestNet = false;
+chain_type fChain = CHAIN_MAIN;
 
 class CDnsSeedOpts {
 public:
@@ -22,6 +22,7 @@ public:
   int nPort;
   int nDnsThreads;
   int fUseTestNet;
+  int fUseSignet;
   int fWipeBan;
   int fWipeIgnore;
   const char *mbox;
@@ -33,7 +34,7 @@ public:
   const char *ipv6_proxy;
   std::set<uint64_t> filter_whitelist;
 
-  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false), ipv4_proxy(NULL), ipv6_proxy(NULL) {}
+  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fUseSignet(false), fWipeBan(false), fWipeIgnore(false), ipv4_proxy(NULL), ipv6_proxy(NULL) {}
 
   void ParseCommandLine(int argc, char **argv) {
     static const char *help = "Bitcoin-seeder\n"
@@ -52,6 +53,7 @@ public:
                               "-k <ip:port>    IPV6 SOCKS5 proxy IP/Port\n"
                               "-w f1,f2,...    Allow these flag combinations as filters\n"
                               "--testnet       Use testnet\n"
+                              "--signet        Use signet (BIP 325)\n"
                               "--wipeban       Wipe list of banned nodes\n"
                               "--wipeignore    Wipe list of ignored nodes\n"
                               "-?, --help      Show this text\n"
@@ -72,6 +74,7 @@ public:
         {"proxyipv6", required_argument, 0, 'k'},
         {"filter", required_argument, 0, 'w'},
         {"testnet", no_argument, &fUseTestNet, 1},
+        {"signet", no_argument, &fUseSignet, 1},
         {"wipeban", no_argument, &fWipeBan, 1},
         {"wipeignore", no_argument, &fWipeBan, 1},
         {"help", no_argument, 0, 'h'},
@@ -85,17 +88,17 @@ public:
           host = optarg;
           break;
         }
-        
+
         case 'm': {
           mbox = optarg;
           break;
         }
-        
+
         case 'n': {
           ns = optarg;
           break;
         }
-        
+
         case 't': {
           int n = strtol(optarg, NULL, 10);
           if (n > 0 && n < 1000) nThreads = n;
@@ -424,9 +427,25 @@ static const string testnet_seeds[] = {"testnet-seed.alexykot.me",
                                        "testnet-seed.bluematt.me",
                                        "testnet-seed.bitcoin.schildbach.de",
                                        ""};
+static const string signet_seeds[] = {"seednode.signet.bitcoin.sprovoost.nl",
+                                      ""};
 static const string *seeds = mainnet_seeds;
 
 extern "C" void* ThreadSeeder(void*) {
+  switch (fChain) {
+    case CHAIN_MAIN: {
+        break;
+    }
+    case CHAIN_TESTNET: {
+        break;
+    }
+    case CHAIN_SIGNET: {
+        db.Add(CService("178.128.221.177", 38333), true);
+        break;
+    }
+    default: assert(false);
+  }
+
   do {
     for (int i=0; seeds[i] != ""; i++) {
       vector<CNetAddr> ips;
@@ -482,7 +501,16 @@ int main(int argc, char **argv) {
       pchMessageStart[2] = 0x09;
       pchMessageStart[3] = 0x07;
       seeds = testnet_seeds;
-      fTestNet = true;
+      fChain = CHAIN_TESTNET;
+  }
+  if (opts.fUseSignet) {
+      printf("Using signet.\n");
+      pchMessageStart[0] = 0x0A;
+      pchMessageStart[1] = 0x03;
+      pchMessageStart[2] = 0xCF;
+      pchMessageStart[3] = 0x40;
+      seeds = signet_seeds;
+      fChain = CHAIN_SIGNET;
   }
   if (!opts.ns) {
     printf("No nameserver set. Not starting DNS server.\n");

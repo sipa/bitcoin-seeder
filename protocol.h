@@ -15,10 +15,23 @@
 #include <string>
 #include "uint256.h"
 
-extern bool fTestNet;
-static inline unsigned short GetDefaultPort(const bool testnet = fTestNet)
+enum
 {
-    return testnet ? 18333 : 8333;
+    CHAIN_MAIN = 0,
+    CHAIN_TESTNET = 1,
+    CHAIN_SIGNET = 2
+};
+
+typedef uint64 chain_type;
+extern chain_type fChain;
+static inline unsigned short GetDefaultPort(const chain_type chain = fChain)
+{
+    switch (chain) {
+        case CHAIN_MAIN:    return 8333;
+        case CHAIN_TESTNET: return 18333;
+        case CHAIN_SIGNET:  return 38333;
+        default: assert(false);
+    }
 }
 
 //
