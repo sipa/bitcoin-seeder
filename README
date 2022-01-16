@@ -40,12 +40,29 @@ e-mail address (with the @ part replaced by .) using -m.
 
 COMPILING
 ---------
+
 Compiling will require boost and ssl.  On debian systems, these are provided
 by `libboost-dev` and `libssl-dev` respectively.
 
 $ make
 
 This will produce the `dnsseed` binary.
+
+TESTING
+-------
+
+It's sometimes useful to test `dnsseed` locally to ensure it's giving good
+output (either as part of development or sanity checking). You can inspect
+`dnsseed.dump` to inspect all nodes being tracked for crawling, or you can
+issue DNS requests directly. Example:
+
+$ dig @:: -p 15353 dnsseed.example.com
+       ^       ^    ^
+       |       |    |__ Should match the host (-h) argument supplied to dnsseed
+       |       |
+       |       |_______ Port number (example uses the user space port; see below)
+       |
+       |_______________ Explicitly call the DNS server on localhost
 
 
 RUNNING AS NON-ROOT
