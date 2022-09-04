@@ -264,8 +264,8 @@ public:
   // acquires a shared lock (this does not suffice for read mode, but we assume that only happens at startup, single-threaded)
   // this way, dumping does not interfere with GetIPs_, which is called from the DNS thread
   IMPLEMENT_SERIALIZE {
-    int nVersion = 0;
-    READWRITE(nVersion);
+    int version = 0;
+    READWRITE(version);
     SHARED_CRITICAL_BLOCK(cs) {
       if (fWrite) {
         CAddrDb *db = const_cast<CAddrDb*>(this);
