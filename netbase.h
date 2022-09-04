@@ -12,6 +12,8 @@
 
 extern int nConnectTimeout;
 
+static constexpr int ADDRV2_FORMAT = 0x20000000;
+
 #ifdef WIN32
 // In MSVC, this is defined as a macro, undefine it to prevent a compile and link error
 #undef SetPort
@@ -22,8 +24,9 @@ enum Network
     NET_UNROUTABLE,
     NET_IPV4,
     NET_IPV6,
-    NET_TOR,
+    NET_TOR = 4,
     NET_I2P,
+    NET_CJDNS,
 
     NET_MAX,
 };
@@ -31,11 +34,12 @@ enum Network
 extern int nConnectTimeout;
 extern bool fNameLookup;
 
-/** IP address (IPv6, or IPv4 using mapped IPv6 range (::FFFF:0:0/96)) */
+/** Network address (IPv4, IPv6, TOR, I2P or CJDNS) */
 class CNetAddr
 {
     protected:
-        unsigned char ip[16]; // in network byte order
+        std::vector<unsigned char> vAddr; // raw address (in network byte order for IPv{4,6})
+        unsigned char networkId;                // Network to which this address belongs
 
     public:
         CNetAddr();
@@ -44,6 +48,8 @@ class CNetAddr
         explicit CNetAddr(const std::string &strIp, bool fAllowLookup = false);
         void Init();
         bool SetSpecial(const std::string &strName); // for Tor and I2P addresses
+        bool SetTor(const std::string &strName);
+        bool SetI2P(const std::string &strName);
         bool IsIPv4() const;    // IPv4 mapped address (::FFFF:0:0/96, 0.0.0.0/0)
         bool IsIPv6() const;    // IPv6 address (not mapped IPv4, not Tor/I2P)
         bool IsReserved() const; // Against Hetzners Abusal/Netscan Bot
@@ -59,6 +65,7 @@ class CNetAddr
         bool IsRFC6145() const; // IPv6 IPv4-translated address (::FFFF:0:0:0/96)
         bool IsTor() const;
         bool IsI2P() const;
+        bool IsCJDNS() const;
         bool IsLocal() const;
         bool IsRoutable() const;
         bool IsValid() const;
