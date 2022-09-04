@@ -418,7 +418,11 @@ extern "C" void* ThreadStats(void*) {
   return nullptr;
 }
 
-static const string mainnet_seeds[] = {"dnsseed.bluematt.me:8333", "bitseed.xf2.org:8333", "dnsseed.bitcoin.dashjr.org:8333", "seed.bitcoin.sipa.be:8333", ""};
+static const string mainnet_seeds[] = {"dnsseed.bluematt.me:8333", "bitseed.xf2.org:8333", "dnsseed.bitcoin.dashjr.org:8333", "seed.bitcoin.sipa.be:8333",
+"rp7k2go3s5lyj3fnj6zn62ktarlrsft2ohlsxkyd7v3e3idqyptvread.onion:8333",
+"qd6jlsevsexww3wefpqs7iglxb3f63y4e6ydulfzrvwflpicmdqa.b32.i2p:0",
+"[fcc7:be49:ccd1:dc91:3125:f0da:457d:8ce]:8333",
+""};
 static const string testnet_seeds[] = {"testnet-seed.alexykot.me:18333",
                                        "testnet-seed.bitcoin.petertodd.org:18333",
                                        "testnet-seed.bluematt.me:18333",
