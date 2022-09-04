@@ -85,9 +85,48 @@ class CNetAddr
         friend bool operator<(const CNetAddr& a, const CNetAddr& b);
 
         IMPLEMENT_SERIALIZE
-            {
-             READWRITE(FLATDATA(ip));
+        {
+            if (nVersion & ADDRV2_FORMAT) {
+                READWRITE(networkId);
+                READWRITE(vAddr);
+                if (fRead)
+                    ValidateAddress();
+            } else {
+                if (fGetSize) {
+                    nSerSize = 16;
+                } else if (fWrite) {
+                    switch (networkId) {
+                        case NET_IPV4: {
+                            // convert IPv4 to IPv6
+                            unsigned char ip4in6[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, vAddr[0], vAddr[1], vAddr[2], vAddr[3]};
+                            READWRITE(FLATDATA(ip4in6));
+                        } break;
+
+                        case NET_IPV6:
+                        case NET_CJDNS:
+                            assert(vAddr.size() == 16);
+                            READWRITE(FLATDATA(vAddr));
+                            break;
+
+                        default: {
+                            // serialize as all zeros
+                            unsigned char zeros[16] = {};
+                            READWRITE(FLATDATA(zeros));
+                        }
+                    }
+                } else {
+                    vAddr.resize(16);
+                    READWRITE(FLATDATA(vAddr));
+                    networkId = NET_IPV6;
+                    ValidateAddress();
+                }
             }
+        }
+
+    private:
+        void ValidateAddress();
+        template<typename P, Network net>
+        bool SetBase32Address(const std::string&);
 };
 
 /** A combination of a network address (CNetAddr) and a (TCP) port */
@@ -124,7 +163,7 @@ class CService : public CNetAddr
         IMPLEMENT_SERIALIZE
             {
              CService* pthis = const_cast<CService*>(this);
-             READWRITE(FLATDATA(ip));
+             READWRITEAS(CNetAddr, *this);
              unsigned short portN = htons(port);
              READWRITE(portN);
              if (fRead)
