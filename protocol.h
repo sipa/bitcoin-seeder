@@ -82,8 +82,11 @@ class CAddress : public CService
                  pthis->Init();
              if (nType & SER_DISK)
              READWRITE(nVersion);
-             if ((nType & SER_DISK) || (nVersion >= 31402 && !(nType & SER_GETHASH)))
+             if ((nType & SER_DISK) || (nVersion >= 31402 && !(nType & SER_GETHASH)) || (nVersion & ADDRV2_FORMAT))
              READWRITE(nTime);
+             if (nVersion & ADDRV2_FORMAT)
+             READWRITE(COMPACTSIZE(nServices));
+             else
              READWRITE(nServices);
              READWRITE(*pip);
             }
