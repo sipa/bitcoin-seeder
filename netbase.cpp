@@ -46,7 +46,7 @@ void SplitHostPort(std::string in, int &portOut, std::string &hostOut) {
         int n = strtol(in.c_str() + colon + 1, &endp, 10);
         if (endp && *endp == 0 && n >= 0) {
             in = in.substr(0, colon);
-            if (n > 0 && n < 0x10000)
+            if (n >= 0 && n < 0x10000)
                 portOut = n;
         }
     }
