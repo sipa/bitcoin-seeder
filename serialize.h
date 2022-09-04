@@ -274,8 +274,6 @@ uint64 ReadCompactSize(Stream& is)
         READDATA(is, xSize);
         nSizeRet = xSize;
     }
-    if (nSizeRet > (uint64)MAX_SIZE)
-        throw std::ios_base::failure("ReadCompactSize() : size too large");
     return nSizeRet;
 }
 
