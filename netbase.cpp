@@ -477,30 +477,140 @@ void CNetAddr::Init()
     networkId = NET_UNROUTABLE;
 }
 
-static const unsigned char pchOnionCat[] = {0xFD,0x87,0xD8,0x7E,0xEB,0x43};
-static const unsigned char pchGarliCat[] = {0xFD,0x60,0xDB,0x4D,0xDD,0xB5};
-
 bool CNetAddr::SetSpecial(const std::string &strName)
 {
-    if (strName.size()>6 && strName.substr(strName.size() - 6, 6) == ".onion") {
-        std::vector<unsigned char> vchAddr = DecodeBase32(strName.substr(0, strName.size() - 6).c_str());
-        if (vchAddr.size() != 16-sizeof(pchOnionCat))
-            return false;
-        memcpy(ip, pchOnionCat, sizeof(pchOnionCat));
-        for (unsigned int i=0; i<16-sizeof(pchOnionCat); i++)
-            ip[i + sizeof(pchOnionCat)] = vchAddr[i];
+    if (SetTor(strName))
         return true;
-    }
-    if (strName.size()>11 && strName.substr(strName.size() - 11, 11) == ".oc.b32.i2p") {
-        std::vector<unsigned char> vchAddr = DecodeBase32(strName.substr(0, strName.size() - 11).c_str());
-        if (vchAddr.size() != 16-sizeof(pchGarliCat))
-            return false;
-        memcpy(ip, pchOnionCat, sizeof(pchGarliCat));
-        for (unsigned int i=0; i<16-sizeof(pchGarliCat); i++)
-            ip[i + sizeof(pchGarliCat)] = vchAddr[i];
+
+    if (SetI2P(strName))
         return true;
-    }
+
     return false;
+}
+
+template<typename Parameters>
+bool DecodeBase32Address(const std::string &strName, std::vector<unsigned char>& vRawAddressOut)
+{
+    using params = Parameters;
+
+    if (strName.size() != params::nAddressSizeWithSuffix) {
+        return false;
+    }
+
+    if (strName.substr(strName.size() - params::nSuffixSize) != params::pchSuffix) {
+        return false;
+    }
+
+    string strEncodedAddress = strName.substr(0, params::nEncodedAddressSize);
+
+    constexpr size_t padding = params::nEncodedAddressSize % 8;
+    if (padding)
+        strEncodedAddress.resize(params::nEncodedAddressSize + padding, '=');
+
+    bool fInvalid;
+    vRawAddressOut = DecodeBase32(strEncodedAddress.c_str(), &fInvalid);
+
+    if (fInvalid)
+        return false;
+
+    assert (vRawAddressOut.size() == params::nDecodedAddressSize);
+
+    return true;
+}
+
+struct TorBase32DecodeParams {
+    static constexpr size_t nRawAddressSize = 32;
+    static constexpr size_t nDecodedAddressSize = nRawAddressSize + 3;
+    static constexpr size_t nEncodedAddressSize = 56;
+    static constexpr const char* pchSuffix = ".onion";
+    static constexpr size_t nSuffixSize = 6;
+    static constexpr size_t nAddressSizeWithSuffix = nEncodedAddressSize + nSuffixSize;
+};
+
+bool CNetAddr::SetTor(const std::string &strName)
+{
+    using params = TorBase32DecodeParams;
+
+    std::vector<unsigned char> vRawAddress;
+
+    if (DecodeBase32Address<params>(strName, vRawAddress)) {
+        constexpr char version = 3;
+
+        if (vRawAddress[34] != version)
+            return false;
+
+        string vChecksumIn = ".onion checksum" + string(vRawAddress.begin(), vRawAddress.begin() + 32) + version;
+        uint256 u256Checksum = SHA3_256(vChecksumIn.data(), vChecksumIn.size());
+
+        if (0 != memcmp(u256Checksum.begin(), vRawAddress.data() + 32, 2))
+            return false;
+
+        vRawAddress.resize(32);
+        vAddr = std::move(vRawAddress);
+        networkId = NET_TOR;
+
+        return true;
+    }
+
+    return false;
+}
+
+struct I2PBase32DecodeParams {
+    static constexpr size_t nRawAddressSize = 32;
+    static constexpr size_t nEncodedAddressSize = 52;
+    static constexpr size_t nDecodedAddressSize = nRawAddressSize;
+    static constexpr const char* pchSuffix = ".b32.i2p";
+    static constexpr size_t nSuffixSize = 8;
+    static constexpr size_t nAddressSizeWithSuffix = nEncodedAddressSize + nSuffixSize;
+};
+
+bool CNetAddr::SetI2P(const std::string &strName)
+{
+    using params = I2PBase32DecodeParams;
+
+    std::vector<unsigned char> vRawAddress;
+
+    if (DecodeBase32Address<params>(strName, vRawAddress)) {
+        vRawAddress.resize(params::nRawAddressSize);
+        vAddr = std::move(vRawAddress);
+        networkId = NET_I2P;
+
+        return true;
+    }
+
+    return false;
+}
+
+std::string TorToString(std::vector<unsigned char> const& vAddr)
+{
+    assert (vAddr.size() == 32);
+
+    constexpr char version = 3;
+
+    string vChecksumIn = ".onion checksum" + string(vAddr.begin(), vAddr.end()) + version;
+    uint256 u256Checksum = SHA3_256(vChecksumIn.data(), vChecksumIn.size());
+
+    std::vector<unsigned char> vDecoded;
+    vDecoded.reserve(35);
+    vDecoded.insert(vDecoded.end(), vAddr.begin(), vAddr.end());
+    vDecoded.insert(vDecoded.end(), u256Checksum.begin(), u256Checksum.begin() + 2);
+    vDecoded.push_back(version);
+
+    assert (vDecoded.size() == 35);
+
+    return EncodeBase32(vDecoded.data(), vDecoded.size()) + ".onion";
+}
+
+std::string I2PToString(std::vector<unsigned char> const& vAddr)
+{
+    assert (vAddr.size() == 32);
+
+    string strEncodedAddress = EncodeBase32(vAddr.data(), vAddr.size());
+
+    assert (strEncodedAddress.size() == 56);
+    strEncodedAddress.resize(52); // Remove padding characters "===="
+
+    return strEncodedAddress + ".b32.i2p";
 }
 
 CNetAddr::CNetAddr()
