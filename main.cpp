@@ -363,7 +363,7 @@ extern "C" void* ThreadDumper(void*) {
       FILE *f = fopen("dnsseed.dat.new","w+");
       if (f) {
         {
-          CAutoFile cf(f);
+          CAutoFile cf(f, SER_DISK, PROTOCOL_VERSION | ADDRV2_FORMAT);
           cf << db;
         }
         rename("dnsseed.dat.new", "dnsseed.dat");
@@ -502,7 +502,7 @@ int main(int argc, char **argv) {
   FILE *f = fopen("dnsseed.dat","r");
   if (f) {
     printf("Loading dnsseed.dat...");
-    CAutoFile cf(f);
+    CAutoFile cf(f, SER_DISK, PROTOCOL_VERSION | ADDRV2_FORMAT);
     cf >> db;
     if (opts.fWipeBan)
         db.banned.clear();
