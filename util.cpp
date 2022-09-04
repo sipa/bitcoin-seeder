@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <openssl/evp.h>
+#include <openssl/err.h>
 #include "util.h"
 
 using namespace std;
@@ -215,4 +217,42 @@ string DecodeBase32(const string& str)
 {
     vector<unsigned char> vchRet = DecodeBase32(str.c_str());
     return string((const char*)&vchRet[0], vchRet.size());
+}
+
+uint256 SHA3_256(const void* pchData, size_t nSize)
+{
+    EVP_MD_CTX *mdCtx = nullptr;
+
+    auto throw_openssl_error = []() {
+        throw std::runtime_error(ERR_error_string(ERR_get_error(), NULL));
+    };
+
+    uint256 digest;
+
+    try {
+
+        if((mdCtx = EVP_MD_CTX_new()) == NULL)
+            throw_openssl_error();
+
+        if(1 != EVP_DigestInit(mdCtx, EVP_sha3_256()))
+            throw_openssl_error();
+
+        if(1 != EVP_DigestUpdate(mdCtx, pchData, nSize))
+            throw_openssl_error();
+
+        unsigned int nDigetSize = digest.size();
+
+        if(1 != EVP_DigestFinal(mdCtx, (unsigned char*)&digest, &nDigetSize))
+            throw_openssl_error();
+
+        EVP_MD_CTX_free(mdCtx);
+        mdCtx = nullptr;
+
+        return digest;
+
+    } catch(...) {
+        EVP_MD_CTX_free(mdCtx);
+        mdCtx = nullptr;
+        throw;
+    }
 }
