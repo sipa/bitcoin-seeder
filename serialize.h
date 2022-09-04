@@ -131,7 +131,11 @@ enum
                           Op ser_action)        \
 
 
+template<typename T, typename A>
+T& ReadWriteAsHelper(const A& a) { return static_cast<T&>(const_cast<A&>(a)); }
+
 #define READWRITE(obj)      (nSerSize += ::SerReadWrite(s, (obj), nType, nVersion, ser_action))
+#define READWRITEAS(type, obj)      (READWRITE(ReadWriteAsHelper<type>(obj)))
 
 
 
@@ -276,12 +280,38 @@ uint64 ReadCompactSize(Stream& is)
 }
 
 
+// Wrapper for serializing compact size
+#define COMPACTSIZE(size)   REF(CCompactSize(REF(size)))
+class CCompactSize
+{
+public:
+    uint64* nSize;
+    CCompactSize(uint64& nSizeIn) : nSize(&nSizeIn) {}
+
+    unsigned int GetSerializeSize(int, int=0) const
+    {
+        return GetSizeOfCompactSize(*nSize);
+    }
+
+    template<typename Stream>
+    void Serialize(Stream& s, int, int=0) const
+    {
+        WriteCompactSize(s, *nSize);
+    }
+
+    template<typename Stream>
+    void Unserialize(Stream& s, int, int=0)
+    {
+        *nSize = ReadCompactSize(s);
+    }
+};
+
 
 //
 // Wrapper for serializing arrays and POD
 // There's a clever template way to make arrays serialize normally, but MSVC6 doesn't support it
 //
-#define FLATDATA(obj)   REF(CFlatData((char*)&(obj), (char*)&(obj) + sizeof(obj)))
+#define FLATDATA(obj)   REF(CFlatData(obj))
 class CFlatData
 {
 protected:
@@ -289,6 +319,10 @@ protected:
     char* pend;
 public:
     CFlatData(void* pbeginIn, void* pendIn) : pbegin((char*)pbeginIn), pend((char*)pendIn) { }
+    template<typename T>
+    explicit CFlatData(std::vector<T> const& vec) : pbegin((char*)vec.data()), pend((char*)vec.data() + vec.size() * sizeof(T)) { }
+    template<typename T, size_t N>
+    explicit CFlatData(T (&array)[N]) : pbegin((char*)&array[0]), pend((char*)&array[N]) { }
     char* begin() { return pbegin; }
     const char* begin() const { return pbegin; }
     char* end() { return pend; }
