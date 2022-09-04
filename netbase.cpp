@@ -432,19 +432,6 @@ bool GetProxy(enum Network net, CService &addrProxy) {
     return true;
 }
 
-bool SetNameProxy(CService addrProxy, int nSocksVersion) {
-    if (nSocksVersion != 0 && nSocksVersion != 5)
-        return false;
-    if (nSocksVersion != 0 && !addrProxy.IsValid())
-        return false;
-    nameproxyInfo = std::make_pair(addrProxy, nSocksVersion);
-    return true;
-}
-
-bool GetNameProxy() {
-    return nameproxyInfo.second != 0;
-}
-
 bool IsProxy(const CNetAddr &addr) {
     for (int i=0; i<NET_MAX; i++) {
         if (proxyInfo[i].second && (addr == (CNetAddr)proxyInfo[i].first))
@@ -485,46 +472,9 @@ bool ConnectSocket(const CService &addrDest, SOCKET& hSocketRet, int nTimeout)
     return true;
 }
 
-bool ConnectSocketByName(CService &addr, SOCKET& hSocketRet, const char *pszDest, int portDefault, int nTimeout)
-{
-    string strDest;
-    int port = portDefault;
-    SplitHostPort(string(pszDest), port, strDest);
-
-    SOCKET hSocket = INVALID_SOCKET;
-    CService addrResolved(CNetAddr(strDest, fNameLookup && !nameproxyInfo.second), port);
-    if (addrResolved.IsValid()) {
-        addr = addrResolved;
-        return ConnectSocket(addr, hSocketRet, nTimeout);
-    }
-    addr = CService("0.0.0.0:0");
-    if (!nameproxyInfo.second)
-        return false;
-    if (!ConnectSocketDirectly(nameproxyInfo.first, hSocket, nTimeout))
-        return false;
-
-    switch(nameproxyInfo.second)
-    {
-        default:
-        case 4: return false;
-        case 5:
-            if (!Socks5(strDest, port, hSocket))
-                return false;
-            break;
-    }
-
-    hSocketRet = hSocket;
-    return true;
-}
-
 void CNetAddr::Init()
 {
     memset(ip, 0, 16);
-}
-
-void CNetAddr::SetIP(const CNetAddr& ipIn)
-{
-    memcpy(ip, ipIn.ip, sizeof(ip));
 }
 
 static const unsigned char pchOnionCat[] = {0xFD,0x87,0xD8,0x7E,0xEB,0x43};
@@ -807,89 +757,6 @@ bool CNetAddr::GetIn6Addr(struct in6_addr* pipv6Addr) const
     return true;
 }
 
-// get canonical identifier of an address' group
-// no two connections will be attempted to addresses with the same group
-std::vector<unsigned char> CNetAddr::GetGroup() const
-{
-    std::vector<unsigned char> vchRet;
-    int nClass = NET_IPV6;
-    int nStartByte = 0;
-    int nBits = 16;
-
-    // all local addresses belong to the same group
-    if (IsLocal())
-    {
-        nClass = 255;
-        nBits = 0;
-    }
-
-    // all unroutable addresses belong to the same group
-    if (!IsRoutable())
-    {
-        nClass = NET_UNROUTABLE;
-        nBits = 0;
-    }
-    // for IPv4 addresses, '1' + the 16 higher-order bits of the IP
-    // includes mapped IPv4, SIIT translated IPv4, and the well-known prefix
-    else if (IsIPv4() || IsRFC6145() || IsRFC6052())
-    {
-        nClass = NET_IPV4;
-        nStartByte = 12;
-    }
-    // for 6to4 tunnelled addresses, use the encapsulated IPv4 address
-    else if (IsRFC3964())
-    {
-        nClass = NET_IPV4;
-        nStartByte = 2;
-    }
-    // for Teredo-tunnelled IPv6 addresses, use the encapsulated IPv4 address
-    else if (IsRFC4380())
-    {
-        vchRet.push_back(NET_IPV4);
-        vchRet.push_back(GetByte(3) ^ 0xFF);
-        vchRet.push_back(GetByte(2) ^ 0xFF);
-        return vchRet;
-    }
-    else if (IsTor())
-    {
-        nClass = NET_TOR;
-        nStartByte = 6;
-        nBits = 4;
-    }
-    else if (IsI2P())
-    {
-        nClass = NET_I2P;
-        nStartByte = 6;
-        nBits = 4;
-    }
-    // for he.net, use /36 groups
-    else if (GetByte(15) == 0x20 && GetByte(14) == 0x11 && GetByte(13) == 0x04 && GetByte(12) == 0x70)
-        nBits = 36;
-    // for the rest of the IPv6 network, use /32 groups
-    else
-        nBits = 32;
-
-    vchRet.push_back(nClass);
-    while (nBits >= 8)
-    {
-        vchRet.push_back(GetByte(15 - nStartByte));
-        nStartByte++;
-        nBits -= 8;
-    }
-    if (nBits > 0)
-        vchRet.push_back(GetByte(15 - nStartByte) | ((1 << nBits) - 1));
-
-    return vchRet;
-}
-
-uint64 CNetAddr::GetHash() const
-{
-    uint256 hash = Hash(&ip[0], &ip[16]);
-    uint64 nRet;
-    memcpy(&nRet, &hash, sizeof(nRet));
-    return nRet;
-}
-
 void CNetAddr::print() const
 {
     printf("CNetAddr(%s)\n", ToString().c_str());
@@ -906,71 +773,6 @@ int static GetExtNetwork(const CNetAddr *addr)
     if (addr->IsRFC4380())
         return NET_TEREDO;
     return addr->GetNetwork();
-}
-
-/** Calculates a metric for how reachable (*this) is from a given partner */
-int CNetAddr::GetReachabilityFrom(const CNetAddr *paddrPartner) const
-{
-    enum Reachability {
-        REACH_UNREACHABLE,
-        REACH_DEFAULT,
-        REACH_TEREDO,
-        REACH_IPV6_WEAK,
-        REACH_IPV4,
-        REACH_IPV6_STRONG,
-        REACH_PRIVATE
-    };
-
-    if (!IsRoutable())
-        return REACH_UNREACHABLE;
-
-    int ourNet = GetExtNetwork(this);
-    int theirNet = GetExtNetwork(paddrPartner);
-    bool fTunnel = IsRFC3964() || IsRFC6052() || IsRFC6145();
-
-    switch(theirNet) {
-    case NET_IPV4:
-        switch(ourNet) {
-        default:       return REACH_DEFAULT;
-        case NET_IPV4: return REACH_IPV4;
-        }
-    case NET_IPV6:
-        switch(ourNet) {
-        default:         return REACH_DEFAULT;
-        case NET_TEREDO: return REACH_TEREDO;
-        case NET_IPV4:   return REACH_IPV4;
-        case NET_IPV6:   return fTunnel ? REACH_IPV6_WEAK : REACH_IPV6_STRONG; // only prefer giving our IPv6 address if it's not tunnelled
-        }
-    case NET_TOR:
-        switch(ourNet) {
-        default:         return REACH_DEFAULT;
-        case NET_IPV4:   return REACH_IPV4; // Tor users can connect to IPv4 as well
-        case NET_TOR:    return REACH_PRIVATE;
-        }
-    case NET_I2P:
-        switch(ourNet) {
-        default:         return REACH_DEFAULT;
-        case NET_I2P:    return REACH_PRIVATE;
-        }
-    case NET_TEREDO:
-        switch(ourNet) {
-        default:          return REACH_DEFAULT;
-        case NET_TEREDO:  return REACH_TEREDO;
-        case NET_IPV6:    return REACH_IPV6_WEAK;
-        case NET_IPV4:    return REACH_IPV4;
-        }
-    case NET_UNKNOWN:
-    case NET_UNROUTABLE:
-    default:
-        switch(ourNet) {
-        default:          return REACH_DEFAULT;
-        case NET_TEREDO:  return REACH_TEREDO;
-        case NET_IPV6:    return REACH_IPV6_WEAK;
-        case NET_IPV4:    return REACH_IPV4;
-        case NET_I2P:     return REACH_PRIVATE; // assume connections from unroutable addresses are
-        case NET_TOR:     return REACH_PRIVATE; // either from Tor/I2P, or don't care about our address
-        }
-    }
 }
 
 void CService::Init()
@@ -1098,16 +900,6 @@ bool CService::GetSockAddr(struct sockaddr* paddr, socklen_t *addrlen) const
         return true;
     }
     return false;
-}
-
-std::vector<unsigned char> CService::GetKey() const
-{
-     std::vector<unsigned char> vKey;
-     vKey.resize(18);
-     memcpy(&vKey[0], ip, 16);
-     vKey[16] = port / 0x100;
-     vKey[17] = port & 0x0FF;
-     return vKey;
 }
 
 std::string CService::ToStringPort() const
