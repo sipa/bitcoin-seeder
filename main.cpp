@@ -418,11 +418,11 @@ extern "C" void* ThreadStats(void*) {
   return nullptr;
 }
 
-static const string mainnet_seeds[] = {"dnsseed.bluematt.me", "bitseed.xf2.org", "dnsseed.bitcoin.dashjr.org", "seed.bitcoin.sipa.be", ""};
-static const string testnet_seeds[] = {"testnet-seed.alexykot.me",
-                                       "testnet-seed.bitcoin.petertodd.org",
-                                       "testnet-seed.bluematt.me",
-                                       "testnet-seed.bitcoin.schildbach.de",
+static const string mainnet_seeds[] = {"dnsseed.bluematt.me:8333", "bitseed.xf2.org:8333", "dnsseed.bitcoin.dashjr.org:8333", "seed.bitcoin.sipa.be:8333", ""};
+static const string testnet_seeds[] = {"testnet-seed.alexykot.me:18333",
+                                       "testnet-seed.bitcoin.petertodd.org:18333",
+                                       "testnet-seed.bluematt.me:18333",
+                                       "testnet-seed.bitcoin.schildbach.de:18333",
                                        ""};
 static const string *seeds = mainnet_seeds;
 
@@ -432,10 +432,10 @@ extern "C" void* ThreadSeeder(void*) {
   }
   do {
     for (int i=0; seeds[i] != ""; i++) {
-      vector<CNetAddr> ips;
-      LookupHost(seeds[i].c_str(), ips);
-      for (vector<CNetAddr>::iterator it = ips.begin(); it != ips.end(); it++) {
-        db.Add(CService(*it, GetDefaultPort()), true);
+      vector<CService> ips;
+      Lookup(seeds[i].c_str(), ips, GetDefaultPort());
+      for (vector<CService>::iterator it = ips.begin(); it != ips.end(); it++) {
+        db.Add(*it, true);
       }
     }
     Sleep(1800000);
