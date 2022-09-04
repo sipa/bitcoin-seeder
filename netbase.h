@@ -82,9 +82,9 @@ class CNetAddr
         friend bool operator<(const CNetAddr& a, const CNetAddr& b);
 
         IMPLEMENT_SERIALIZE
-            (
+            {
              READWRITE(FLATDATA(ip));
-            )
+            }
 };
 
 /** A combination of a network address (CNetAddr) and a (TCP) port */
@@ -120,14 +120,14 @@ class CService : public CNetAddr
         CService(const struct sockaddr_in6& addr);
 
         IMPLEMENT_SERIALIZE
-            (
+            {
              CService* pthis = const_cast<CService*>(this);
              READWRITE(FLATDATA(ip));
              unsigned short portN = htons(port);
              READWRITE(portN);
              if (fRead)
                  pthis->port = ntohs(portN);
-            )
+            }
 };
 
 enum Network ParseNetwork(std::string net);

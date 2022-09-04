@@ -88,7 +88,7 @@ enum
     SER_BLOCKHEADERONLY = (1 << 17),
 };
 
-#define IMPLEMENT_SERIALIZE(statements)    \
+#define IMPLEMENT_SERIALIZE    \
     unsigned int GetSerializeSize(int nType=0, int nVersion=PROTOCOL_VERSION) const  \
     {                                           \
         CSerActionGetSerializeSize ser_action;  \
@@ -99,7 +99,7 @@ enum
         ser_streamplaceholder s;                \
         s.nType = nType;                        \
         s.nVersion = nVersion;                  \
-        {statements}                            \
+        REF(*this).SerializationOps(s, nType, nVersion, fGetSize, fWrite, fRead, nSerSize, ser_action);  \
         return nSerSize;                        \
     }                                           \
     template<typename Stream>                   \
@@ -110,7 +110,7 @@ enum
         const bool fWrite = true;               \
         const bool fRead = false;               \
         unsigned int nSerSize = 0;              \
-        {statements}                            \
+        REF(*this).SerializationOps(s, nType, nVersion, fGetSize, fWrite, fRead, nSerSize, ser_action);  \
     }                                           \
     template<typename Stream>                   \
     void Unserialize(Stream& s, int nType=0, int nVersion=PROTOCOL_VERSION)  \
@@ -120,8 +120,16 @@ enum
         const bool fWrite = false;              \
         const bool fRead = true;                \
         unsigned int nSerSize = 0;              \
-        {statements}                            \
-    }
+        SerializationOps(s, nType, nVersion, fGetSize, fWrite, fRead, nSerSize, ser_action);  \
+    }                                           \
+    template<typename Stream, typename Op>      \
+    void SerializationOps(Stream& s, int nType, int nVersion,  \
+                          const bool fGetSize,  \
+                          const bool fWrite,    \
+                          const bool fRead,     \
+                          unsigned int& nSerSize,  \
+                          Op ser_action)        \
+
 
 #define READWRITE(obj)      (nSerSize += ::SerReadWrite(s, (obj), nType, nVersion, ser_action))
 

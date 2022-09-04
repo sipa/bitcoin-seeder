@@ -40,11 +40,11 @@ public:
     weight = weight * f + (1.0-f);
   }
   
-  IMPLEMENT_SERIALIZE (
+  IMPLEMENT_SERIALIZE {
     READWRITE(weight);
     READWRITE(count);
     READWRITE(reliability);
-  )
+  }
 
   friend class CAddrInfo;
 };
@@ -138,7 +138,7 @@ public:
   
   friend class CAddrDb;
   
-  IMPLEMENT_SERIALIZE (
+  IMPLEMENT_SERIALIZE {
     unsigned char version = 4;
     READWRITE(version);
     READWRITE(ip);
@@ -168,7 +168,7 @@ public:
       if (version >= 4)
           READWRITE(ourLastSuccess);
     }
-  )
+  }
 };
 
 class CAddrDbStats {
@@ -263,7 +263,7 @@ public:
   //   banned
   // acquires a shared lock (this does not suffice for read mode, but we assume that only happens at startup, single-threaded)
   // this way, dumping does not interfere with GetIPs_, which is called from the DNS thread
-  IMPLEMENT_SERIALIZE (({
+  IMPLEMENT_SERIALIZE {
     int nVersion = 0;
     READWRITE(nVersion);
     SHARED_CRITICAL_BLOCK(cs) {
@@ -303,7 +303,7 @@ public:
       }
       READWRITE(banned);
     }
-  });)
+  }
 
   void Add(const CAddress &addr, bool fForce = false) {
     CRITICAL_BLOCK(cs)
