@@ -835,16 +835,7 @@ enum Network CNetAddr::GetNetwork() const
     if (!IsRoutable())
         return NET_UNROUTABLE;
 
-    if (IsIPv4())
-        return NET_IPV4;
-
-    if (IsTor())
-        return NET_TOR;
-
-    if (IsI2P())
-        return NET_I2P;
-
-    return NET_IPV6;
+    return Network(networkId);
 }
 
 std::string CNetAddr::ToStringIP() const
