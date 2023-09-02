@@ -60,7 +60,7 @@ class CDataStream;
 class CAutoFile;
 static const unsigned int MAX_SIZE = 0x02000000;
 
-static const int PROTOCOL_VERSION = 60000;
+static const int PROTOCOL_VERSION = 70016;
 
 // Used to bypass the rule against non-const reference to temporary
 // where it makes sense with wrappers such as CFlatData or CTxDB
@@ -88,7 +88,7 @@ enum
     SER_BLOCKHEADERONLY = (1 << 17),
 };
 
-#define IMPLEMENT_SERIALIZE(statements)    \
+#define IMPLEMENT_SERIALIZE    \
     unsigned int GetSerializeSize(int nType=0, int nVersion=PROTOCOL_VERSION) const  \
     {                                           \
         CSerActionGetSerializeSize ser_action;  \
@@ -99,7 +99,7 @@ enum
         ser_streamplaceholder s;                \
         s.nType = nType;                        \
         s.nVersion = nVersion;                  \
-        {statements}                            \
+        REF(*this).SerializationOps(s, nType, nVersion, fGetSize, fWrite, fRead, nSerSize, ser_action);  \
         return nSerSize;                        \
     }                                           \
     template<typename Stream>                   \
@@ -110,7 +110,7 @@ enum
         const bool fWrite = true;               \
         const bool fRead = false;               \
         unsigned int nSerSize = 0;              \
-        {statements}                            \
+        REF(*this).SerializationOps(s, nType, nVersion, fGetSize, fWrite, fRead, nSerSize, ser_action);  \
     }                                           \
     template<typename Stream>                   \
     void Unserialize(Stream& s, int nType=0, int nVersion=PROTOCOL_VERSION)  \
@@ -120,10 +120,22 @@ enum
         const bool fWrite = false;              \
         const bool fRead = true;                \
         unsigned int nSerSize = 0;              \
-        {statements}                            \
-    }
+        SerializationOps(s, nType, nVersion, fGetSize, fWrite, fRead, nSerSize, ser_action);  \
+    }                                           \
+    template<typename Stream, typename Op>      \
+    void SerializationOps(Stream& s, int nType, int nVersion,  \
+                          const bool fGetSize,  \
+                          const bool fWrite,    \
+                          const bool fRead,     \
+                          unsigned int& nSerSize,  \
+                          Op ser_action)        \
+
+
+template<typename T, typename A>
+T& ReadWriteAsHelper(const A& a) { return static_cast<T&>(const_cast<A&>(a)); }
 
 #define READWRITE(obj)      (nSerSize += ::SerReadWrite(s, (obj), nType, nVersion, ser_action))
+#define READWRITEAS(type, obj)      (READWRITE(ReadWriteAsHelper<type>(obj)))
 
 
 
@@ -262,18 +274,42 @@ uint64 ReadCompactSize(Stream& is)
         READDATA(is, xSize);
         nSizeRet = xSize;
     }
-    if (nSizeRet > (uint64)MAX_SIZE)
-        throw std::ios_base::failure("ReadCompactSize() : size too large");
     return nSizeRet;
 }
 
+
+// Wrapper for serializing compact size
+#define COMPACTSIZE(size)   REF(CCompactSize(REF(size)))
+class CCompactSize
+{
+public:
+    uint64* nSize;
+    CCompactSize(uint64& nSizeIn) : nSize(&nSizeIn) {}
+
+    unsigned int GetSerializeSize(int, int=0) const
+    {
+        return GetSizeOfCompactSize(*nSize);
+    }
+
+    template<typename Stream>
+    void Serialize(Stream& s, int, int=0) const
+    {
+        WriteCompactSize(s, *nSize);
+    }
+
+    template<typename Stream>
+    void Unserialize(Stream& s, int, int=0)
+    {
+        *nSize = ReadCompactSize(s);
+    }
+};
 
 
 //
 // Wrapper for serializing arrays and POD
 // There's a clever template way to make arrays serialize normally, but MSVC6 doesn't support it
 //
-#define FLATDATA(obj)   REF(CFlatData((char*)&(obj), (char*)&(obj) + sizeof(obj)))
+#define FLATDATA(obj)   REF(CFlatData(obj))
 class CFlatData
 {
 protected:
@@ -281,6 +317,10 @@ protected:
     char* pend;
 public:
     CFlatData(void* pbeginIn, void* pendIn) : pbegin((char*)pbeginIn), pend((char*)pendIn) { }
+    template<typename T>
+    explicit CFlatData(std::vector<T> const& vec) : pbegin((char*)vec.data()), pend((char*)vec.data() + vec.size() * sizeof(T)) { }
+    template<typename T, size_t N>
+    explicit CFlatData(T (&array)[N]) : pbegin((char*)&array[0]), pend((char*)&array[N]) { }
     char* begin() { return pbegin; }
     const char* begin() const { return pbegin; }
     char* end() { return pend; }

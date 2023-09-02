@@ -103,4 +103,6 @@ std::string DecodeBase32(const std::string& str);
 std::string EncodeBase32(const unsigned char* pch, size_t len);
 std::string EncodeBase32(const std::string& str);
 
+uint256 SHA3_256(const void* pchData, size_t nSize);
+
 #endif

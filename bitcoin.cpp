@@ -113,6 +113,10 @@ class CNode {
       if (nVersion >= 209 && !vRecv.empty())
         vRecv >> nStartingHeight;
       
+      if (nVersion >= 70016) {
+        BeginMessage("sendaddrv2");
+        EndMessage();
+      }
       if (nVersion >= 209) {
         BeginMessage("verack");
         EndMessage();
@@ -130,10 +134,15 @@ class CNode {
       GotVersion();
       return false;
     }
-    
-    if (strCommand == "addr" && vAddr) {
+
+    bool addrv2 = strCommand == "addrv2";
+
+    if ((strCommand == "addr" || addrv2) && vAddr) {
+      if (addrv2)
+        vRecv.nVersion |= ADDRV2_FORMAT;
       vector<CAddress> vAddrNew;
       vRecv >> vAddrNew;
+      vRecv.nVersion &= ~ADDRV2_FORMAT;
       // printf("%s: got %i addresses\n", ToString(you).c_str(), (int)vAddrNew.size());
       int64 now = time(NULL);
       vector<CAddress>::iterator it = vAddrNew.begin();

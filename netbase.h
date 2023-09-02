@@ -12,6 +12,8 @@
 
 extern int nConnectTimeout;
 
+static constexpr int ADDRV2_FORMAT = 0x20000000;
+
 #ifdef WIN32
 // In MSVC, this is defined as a macro, undefine it to prevent a compile and link error
 #undef SetPort
@@ -22,8 +24,9 @@ enum Network
     NET_UNROUTABLE,
     NET_IPV4,
     NET_IPV6,
-    NET_TOR,
+    NET_TOR = 4,
     NET_I2P,
+    NET_CJDNS,
 
     NET_MAX,
 };
@@ -31,11 +34,12 @@ enum Network
 extern int nConnectTimeout;
 extern bool fNameLookup;
 
-/** IP address (IPv6, or IPv4 using mapped IPv6 range (::FFFF:0:0/96)) */
+/** Network address (IPv4, IPv6, TOR, I2P or CJDNS) */
 class CNetAddr
 {
     protected:
-        unsigned char ip[16]; // in network byte order
+        std::vector<unsigned char> vAddr; // raw address (in network byte order for IPv{4,6})
+        unsigned char networkId;                // Network to which this address belongs
 
     public:
         CNetAddr();
@@ -43,8 +47,9 @@ class CNetAddr
         explicit CNetAddr(const char *pszIp, bool fAllowLookup = false);
         explicit CNetAddr(const std::string &strIp, bool fAllowLookup = false);
         void Init();
-        void SetIP(const CNetAddr& ip);
         bool SetSpecial(const std::string &strName); // for Tor and I2P addresses
+        bool SetTor(const std::string &strName);
+        bool SetI2P(const std::string &strName);
         bool IsIPv4() const;    // IPv4 mapped address (::FFFF:0:0/96, 0.0.0.0/0)
         bool IsIPv6() const;    // IPv6 address (not mapped IPv4, not Tor/I2P)
         bool IsReserved() const; // Against Hetzners Abusal/Netscan Bot
@@ -60,6 +65,7 @@ class CNetAddr
         bool IsRFC6145() const; // IPv6 IPv4-translated address (::FFFF:0:0:0/96)
         bool IsTor() const;
         bool IsI2P() const;
+        bool IsCJDNS() const;
         bool IsLocal() const;
         bool IsRoutable() const;
         bool IsValid() const;
@@ -68,10 +74,7 @@ class CNetAddr
         std::string ToString() const;
         std::string ToStringIP() const;
         unsigned int GetByte(int n) const;
-        uint64 GetHash() const;
         bool GetInAddr(struct in_addr* pipv4Addr) const;
-        std::vector<unsigned char> GetGroup() const;
-        int GetReachabilityFrom(const CNetAddr *paddrPartner = NULL) const;
         void print() const;
 
         CNetAddr(const struct in6_addr& pipv6Addr);
@@ -82,9 +85,48 @@ class CNetAddr
         friend bool operator<(const CNetAddr& a, const CNetAddr& b);
 
         IMPLEMENT_SERIALIZE
-            (
-             READWRITE(FLATDATA(ip));
-            )
+        {
+            if (nVersion & ADDRV2_FORMAT) {
+                READWRITE(networkId);
+                READWRITE(vAddr);
+                if (fRead)
+                    ValidateAddress();
+            } else {
+                if (fGetSize) {
+                    nSerSize = 16;
+                } else if (fWrite) {
+                    switch (networkId) {
+                        case NET_IPV4: {
+                            // convert IPv4 to IPv6
+                            unsigned char ip4in6[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, vAddr[0], vAddr[1], vAddr[2], vAddr[3]};
+                            READWRITE(FLATDATA(ip4in6));
+                        } break;
+
+                        case NET_IPV6:
+                        case NET_CJDNS:
+                            assert(vAddr.size() == 16);
+                            READWRITE(FLATDATA(vAddr));
+                            break;
+
+                        default: {
+                            // serialize as all zeros
+                            unsigned char zeros[16] = {};
+                            READWRITE(FLATDATA(zeros));
+                        }
+                    }
+                } else {
+                    vAddr.resize(16);
+                    READWRITE(FLATDATA(vAddr));
+                    networkId = NET_IPV6;
+                    ValidateAddress();
+                }
+            }
+        }
+
+    private:
+        void ValidateAddress();
+        template<typename P, Network net>
+        bool SetBase32Address(const std::string&);
 };
 
 /** A combination of a network address (CNetAddr) and a (TCP) port */
@@ -110,7 +152,6 @@ class CService : public CNetAddr
         friend bool operator==(const CService& a, const CService& b);
         friend bool operator!=(const CService& a, const CService& b);
         friend bool operator<(const CService& a, const CService& b);
-        std::vector<unsigned char> GetKey() const;
         std::string ToString() const;
         std::string ToStringPort() const;
         std::string ToStringIPPort() const;
@@ -120,14 +161,14 @@ class CService : public CNetAddr
         CService(const struct sockaddr_in6& addr);
 
         IMPLEMENT_SERIALIZE
-            (
+            {
              CService* pthis = const_cast<CService*>(this);
-             READWRITE(FLATDATA(ip));
+             READWRITEAS(CNetAddr, *this);
              unsigned short portN = htons(port);
              READWRITE(portN);
              if (fRead)
                  pthis->port = ntohs(portN);
-            )
+            }
 };
 
 enum Network ParseNetwork(std::string net);
@@ -135,14 +176,11 @@ void SplitHostPort(std::string in, int &portOut, std::string &hostOut);
 bool SetProxy(enum Network net, CService addrProxy, int nSocksVersion = 5);
 bool GetProxy(enum Network net, CService &addrProxy);
 bool IsProxy(const CNetAddr &addr);
-bool SetNameProxy(CService addrProxy, int nSocksVersion = 5);
-bool GetNameProxy();
 bool LookupHost(const char *pszName, std::vector<CNetAddr>& vIP, unsigned int nMaxSolutions = 0, bool fAllowLookup = true);
 bool LookupHostNumeric(const char *pszName, std::vector<CNetAddr>& vIP, unsigned int nMaxSolutions = 0);
 bool Lookup(const char *pszName, CService& addr, int portDefault = 0, bool fAllowLookup = true);
 bool Lookup(const char *pszName, std::vector<CService>& vAddr, int portDefault = 0, bool fAllowLookup = true, unsigned int nMaxSolutions = 0);
 bool LookupNumeric(const char *pszName, CService& addr, int portDefault = 0);
 bool ConnectSocket(const CService &addr, SOCKET& hSocketRet, int nTimeout = nConnectTimeout);
-bool ConnectSocketByName(CService &addr, SOCKET& hSocketRet, const char *pszDest, int portDefault = 0, int nTimeout = nConnectTimeout);
 
 #endif

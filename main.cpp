@@ -367,7 +367,7 @@ extern "C" void* ThreadDumper(void*) {
       FILE *f = fopen("dnsseed.dat.new","w+");
       if (f) {
         {
-          CAutoFile cf(f);
+          CAutoFile cf(f, SER_DISK, PROTOCOL_VERSION | ADDRV2_FORMAT);
           cf << db;
         }
         rename("dnsseed.dat.new", "dnsseed.dat");
@@ -422,24 +422,25 @@ extern "C" void* ThreadStats(void*) {
   return nullptr;
 }
 
-static const string mainnet_seeds[] = {"dnsseed.bluematt.me", "bitseed.xf2.org", "dnsseed.bitcoin.dashjr.org", "seed.bitcoin.sipa.be", ""};
-static const string testnet_seeds[] = {"testnet-seed.alexykot.me",
-                                       "testnet-seed.bitcoin.petertodd.org",
-                                       "testnet-seed.bluematt.me",
-                                       "testnet-seed.bitcoin.schildbach.de",
+static const string mainnet_seeds[] = {"dnsseed.bluematt.me:8333", "bitseed.xf2.org:8333", "dnsseed.bitcoin.dashjr.org:8333", "seed.bitcoin.sipa.be:8333",
+"rp7k2go3s5lyj3fnj6zn62ktarlrsft2ohlsxkyd7v3e3idqyptvread.onion:8333",
+"qd6jlsevsexww3wefpqs7iglxb3f63y4e6ydulfzrvwflpicmdqa.b32.i2p:0",
+"[fcc7:be49:ccd1:dc91:3125:f0da:457d:8ce]:8333",
+""};
+static const string testnet_seeds[] = {"testnet-seed.alexykot.me:18333",
+                                       "testnet-seed.bitcoin.petertodd.org:18333",
+                                       "testnet-seed.bluematt.me:18333",
+                                       "testnet-seed.bitcoin.schildbach.de:18333",
                                        ""};
 static const string *seeds = mainnet_seeds;
 
 extern "C" void* ThreadSeeder(void*) {
-  if (!fTestNet){
-    db.Add(CService("kjy2eqzk4zwi5zd3.onion", 8333), true);
-  }
   do {
     for (int i=0; seeds[i] != ""; i++) {
-      vector<CNetAddr> ips;
-      LookupHost(seeds[i].c_str(), ips);
-      for (vector<CNetAddr>::iterator it = ips.begin(); it != ips.end(); it++) {
-        db.Add(CService(*it, GetDefaultPort()), true);
+      vector<CService> ips;
+      Lookup(seeds[i].c_str(), ips, GetDefaultPort());
+      for (vector<CService>::iterator it = ips.begin(); it != ips.end(); it++) {
+        db.Add(*it, true);
       }
     }
     Sleep(1800000);
@@ -506,7 +507,7 @@ int main(int argc, char **argv) {
   FILE *f = fopen("dnsseed.dat","r");
   if (f) {
     printf("Loading dnsseed.dat...");
-    CAutoFile cf(f);
+    CAutoFile cf(f, SER_DISK, PROTOCOL_VERSION | ADDRV2_FORMAT);
     cf >> db;
     if (opts.fWipeBan)
         db.banned.clear();

@@ -40,11 +40,11 @@ public:
     weight = weight * f + (1.0-f);
   }
   
-  IMPLEMENT_SERIALIZE (
+  IMPLEMENT_SERIALIZE {
     READWRITE(weight);
     READWRITE(count);
     READWRITE(reliability);
-  )
+  }
 
   friend class CAddrInfo;
 };
@@ -101,7 +101,8 @@ public:
   }
   
   bool IsGood() const {
-    if (ip.GetPort() != GetDefaultPort()) return false;
+    if (ip.GetPort() != GetDefaultPort() && !ip.IsI2P())
+      return false;
     if (!(services & NODE_NETWORK)) return false;
     if (!ip.IsRoutable()) return false;
     if (clientVersion && clientVersion < REQUIRE_VERSION) return false;
@@ -138,7 +139,7 @@ public:
   
   friend class CAddrDb;
   
-  IMPLEMENT_SERIALIZE (
+  IMPLEMENT_SERIALIZE {
     unsigned char version = 4;
     READWRITE(version);
     READWRITE(ip);
@@ -168,7 +169,7 @@ public:
       if (version >= 4)
           READWRITE(ourLastSuccess);
     }
-  )
+  }
 };
 
 class CAddrDbStats {
@@ -263,9 +264,9 @@ public:
   //   banned
   // acquires a shared lock (this does not suffice for read mode, but we assume that only happens at startup, single-threaded)
   // this way, dumping does not interfere with GetIPs_, which is called from the DNS thread
-  IMPLEMENT_SERIALIZE (({
-    int nVersion = 0;
-    READWRITE(nVersion);
+  IMPLEMENT_SERIALIZE {
+    int version = 0;
+    READWRITE(version);
     SHARED_CRITICAL_BLOCK(cs) {
       if (fWrite) {
         CAddrDb *db = const_cast<CAddrDb*>(this);
@@ -303,7 +304,7 @@ public:
       }
       READWRITE(banned);
     }
-  });)
+  }
 
   void Add(const CAddress &addr, bool fForce = false) {
     CRITICAL_BLOCK(cs)

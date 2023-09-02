@@ -40,13 +40,13 @@ class CMessageHeader
         bool IsValid() const;
 
         IMPLEMENT_SERIALIZE
-            (
+            {
              READWRITE(FLATDATA(pchMessageStart));
              READWRITE(FLATDATA(pchCommand));
              READWRITE(nMessageSize);
              if (nVersion >= 209)
              READWRITE(nChecksum);
-            )
+            }
 
     // TODO: make private (improves encapsulation)
     public:
@@ -76,18 +76,21 @@ class CAddress : public CService
         void Init();
 
         IMPLEMENT_SERIALIZE
-            (
+            {
              CAddress* pthis = const_cast<CAddress*>(this);
              CService* pip = (CService*)pthis;
              if (fRead)
                  pthis->Init();
              if (nType & SER_DISK)
              READWRITE(nVersion);
-             if ((nType & SER_DISK) || (nVersion >= 31402 && !(nType & SER_GETHASH)))
+             if ((nType & SER_DISK) || (nVersion >= 31402 && !(nType & SER_GETHASH)) || (nVersion & ADDRV2_FORMAT))
              READWRITE(nTime);
+             if (nVersion & ADDRV2_FORMAT)
+             READWRITE(COMPACTSIZE(nServices));
+             else
              READWRITE(nServices);
              READWRITE(*pip);
-            )
+            }
 
         void print() const;
 
@@ -107,10 +110,10 @@ class CInv
         CInv(const std::string& strType, const uint256& hashIn);
 
         IMPLEMENT_SERIALIZE
-        (
+        {
             READWRITE(type);
             READWRITE(hash);
-        )
+        }
 
         friend bool operator<(const CInv& a, const CInv& b);
 
