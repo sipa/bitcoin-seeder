@@ -14,9 +14,14 @@
 
 #define REQUIRE_VERSION 70001
 
-static inline int GetRequireHeight(const bool testnet = fTestNet)
+static inline int GetRequireHeight(const chain_type chain = fChain)
 {
-    return testnet ? 500000 : 350000;
+    switch (chain) {
+        case CHAIN_MAIN: return 700000;
+        case CHAIN_TESTNET: return 2000000;
+        case CHAIN_SIGNET: return 50000;
+        default: assert(false);
+    }
 }
 
 std::string static inline ToString(const CService &ip) {
@@ -39,7 +44,7 @@ public:
     count = count * f + 1;
     weight = weight * f + (1.0-f);
   }
-  
+
   IMPLEMENT_SERIALIZE (
     READWRITE(weight);
     READWRITE(count);
@@ -82,7 +87,7 @@ private:
   std::string clientSubVersion;
 public:
   CAddrInfo() : services(0), lastTry(0), ourLastTry(0), ourLastSuccess(0), ignoreTill(0), clientVersion(0), blocks(0), total(0), success(0) {}
-  
+
   CAddrReport GetReport() const {
     CAddrReport ret;
     ret.ip = ip;
@@ -99,7 +104,7 @@ public:
     ret.services = services;
     return ret;
   }
-  
+
   bool IsGood() const {
     if (ip.GetPort() != GetDefaultPort()) return false;
     if (!(services & NODE_NETWORK)) return false;
@@ -114,7 +119,7 @@ public:
     if (stat1D.reliability > 0.55 && stat1D.count > 8) return true;
     if (stat1W.reliability > 0.45 && stat1W.count > 16) return true;
     if (stat1M.reliability > 0.35 && stat1M.count > 32) return true;
-    
+
     return false;
   }
   int GetBanTime() const {
@@ -133,11 +138,11 @@ public:
     if (stat8H.reliability - stat8H.weight + 1.0 < 0.08 && stat8H.count > 2)  { return 2*3600; }
     return 0;
   }
-  
+
   void Update(bool good);
-  
+
   friend class CAddrDb;
-  
+
   IMPLEMENT_SERIALIZE (
     unsigned char version = 4;
     READWRITE(version);
@@ -198,7 +203,7 @@ struct CServiceResult {
 //                       /       |                     \
 //               tracked nodes   (b) unknown nodes   (e) active nodes
 //              /           \
-//     (d) good nodes   (c) non-good nodes 
+//     (d) good nodes   (c) non-good nodes
 
 class CAddrDb {
 private:
@@ -210,7 +215,7 @@ private:
   std::set<int> unkId; // set of nodes not yet tried (b)
   std::set<int> goodId; // set of good nodes  (d, good e)
   int nDirty;
-  
+
 protected:
   // internal routines that assume proper locks are acquired
   void Add_(const CAddress &addr, bool force);   // add an address
@@ -241,7 +246,7 @@ public:
            (*it).second.ignoreTill = 0;
       }
   }
-  
+
   std::vector<CAddrReport> GetAll() {
     std::vector<CAddrReport> ret;
     SHARED_CRITICAL_BLOCK(cs) {
@@ -254,7 +259,7 @@ public:
     }
     return ret;
   }
-  
+
   // serialization code
   // format:
   //   nVersion (0 for now)
