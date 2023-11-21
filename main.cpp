@@ -20,6 +20,8 @@ class CDnsSeedOpts {
 public:
   int nThreads;
   int nPort;
+  int nP2Port;
+  int nMinimumHeight;
   int nDnsThreads;
   int fUseTestNet;
   int fWipeBan;
@@ -31,15 +33,18 @@ public:
   const char *ip_addr;
   const char *ipv4_proxy;
   const char *ipv6_proxy;
+  const char *magic;
+  std::vector<string> vSeeds;
   std::set<uint64_t> filter_whitelist;
 
-  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false), ipv4_proxy(NULL), ipv6_proxy(NULL) {}
+  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), nP2Port(0), nMinimumHeight(0), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false), ipv4_proxy(NULL), ipv6_proxy(NULL), magic(NULL) {}
 
   void ParseCommandLine(int argc, char **argv) {
     static const char *help = "Bitcoin-seeder\n"
                               "Usage: %s -h <host> -n <ns> [-m <mbox>] [-t <threads>] [-p <port>]\n"
                               "\n"
                               "Options:\n"
+                              "-s <seed>       Seed node to collect peers from (replaces default)\n"
                               "-h <host>       Hostname of the DNS seed\n"
                               "-n <ns>         Hostname of the nameserver\n"
                               "-m <mbox>       E-Mail address reported in SOA records\n"
@@ -51,6 +56,9 @@ public:
                               "-i <ip:port>    IPV4 SOCKS5 proxy IP/Port\n"
                               "-k <ip:port>    IPV6 SOCKS5 proxy IP/Port\n"
                               "-w f1,f2,...    Allow these flag combinations as filters\n"
+                              "--p2port <port> P2P port to connect to\n"
+                              "--magic <hex>   Magic string/network prefix\n"
+                              "--minheight <n> Minimum height of block chain\n"
                               "--testnet       Use testnet\n"
                               "--wipeban       Wipe list of banned nodes\n"
                               "--wipeignore    Wipe list of ignored nodes\n"
@@ -60,6 +68,7 @@ public:
 
     while(1) {
       static struct option long_options[] = {
+        {"seed", required_argument, 0, 's'},
         {"host", required_argument, 0, 'h'},
         {"ns",   required_argument, 0, 'n'},
         {"mbox", required_argument, 0, 'm'},
@@ -71,6 +80,9 @@ public:
         {"proxyipv4", required_argument, 0, 'i'},
         {"proxyipv6", required_argument, 0, 'k'},
         {"filter", required_argument, 0, 'w'},
+        {"p2port", required_argument, 0, 'b'},
+        {"magic", required_argument, 0, 'q'},
+        {"minheight", required_argument, 0, 'x'},
         {"testnet", no_argument, &fUseTestNet, 1},
         {"wipeban", no_argument, &fWipeBan, 1},
         {"wipeignore", no_argument, &fWipeBan, 1},
@@ -78,9 +90,14 @@ public:
         {0, 0, 0, 0}
       };
       int option_index = 0;
-      int c = getopt_long(argc, argv, "h:n:m:t:a:p:d:o:i:k:w:", long_options, &option_index);
+      int c = getopt_long(argc, argv, "s:h:n:m:t:a:p:d:o:i:k:w:b:q:x:", long_options, &option_index);
       if (c == -1) break;
       switch (c) {
+        case 's': {
+          vSeeds.emplace_back(optarg);
+          break;
+        }
+
         case 'h': {
           host = optarg;
           break;
@@ -152,6 +169,32 @@ public:
             }
             filter_whitelist.insert(l);
           }
+          break;
+        }
+
+        case 'b': {
+          int p = strtol(optarg, NULL, 10);
+          if (p > 0 && p < 65536) nP2Port = p;
+          break;
+        }
+
+        case 'q': {
+          long int n;
+          unsigned int c;
+          if (strlen(optarg)!=8) {
+            break; /* must be 4 hex-encoded bytes */
+          }
+          n = strtol(optarg, NULL, 16);
+          if (n==0 && strcmp(optarg, "00000000")) {
+            break; /* hex decode failed */
+          }
+          magic = optarg;
+          break;
+        }
+
+        case 'x': {
+          int n = strtol(optarg, NULL, 10);
+          if (n > 0 && n <= 0x7fffffff) nMinimumHeight = n;
           break;
         }
 
@@ -422,22 +465,29 @@ extern "C" void* ThreadStats(void*) {
   return nullptr;
 }
 
-static const string mainnet_seeds[] = {"dnsseed.bluematt.me", "bitseed.xf2.org", "dnsseed.bitcoin.dashjr.org", "seed.bitcoin.sipa.be", ""};
+static const string mainnet_seeds[] = {"dnsseed.bluematt.me", "bitseed.xf2.org", "dnsseed.bitcoin.dashjr.org", "seed.bitcoin.sipa.be", "kjy2eqzk4zwi5zd3.onion", ""};
 static const string testnet_seeds[] = {"testnet-seed.alexykot.me",
                                        "testnet-seed.bitcoin.petertodd.org",
                                        "testnet-seed.bluematt.me",
                                        "testnet-seed.bitcoin.schildbach.de",
                                        ""};
 static const string *seeds = mainnet_seeds;
+static vector<string> vSeeds;
 
 extern "C" void* ThreadSeeder(void*) {
-  if (!fTestNet){
-    db.Add(CService("kjy2eqzk4zwi5zd3.onion", 8333), true);
+  vector<string> vDnsSeeds;
+  for (const string& seed: vSeeds) {
+    size_t len = seed.size();
+    if (len > 6 && !seed.compare(len - 6, 6, ".onion")) {
+      db.Add(CService(seed.c_str(), GetDefaultPort()), true);
+    } else {
+      vDnsSeeds.push_back(seed);
+    }
   }
   do {
-    for (int i=0; seeds[i] != ""; i++) {
+    for (const string& seed: vDnsSeeds) {
       vector<CNetAddr> ips;
-      LookupHost(seeds[i].c_str(), ips);
+      LookupHost(seed.c_str(), ips);
       for (vector<CNetAddr>::iterator it = ips.begin(); it != ips.end(); it++) {
         db.Add(CService(*it, GetDefaultPort()), true);
       }
@@ -490,6 +540,30 @@ int main(int argc, char **argv) {
       pchMessageStart[3] = 0x07;
       seeds = testnet_seeds;
       fTestNet = true;
+  }
+  if (opts.nP2Port) {
+    printf("Using P2P port %i\n", opts.nP2Port);
+    nDefaultP2Port = opts.nP2Port;
+  }
+  if (opts.magic) {
+    printf("Using magic %s\n", opts.magic);
+    for (int n=0; n<4; ++n) {
+      unsigned int c = 0;
+      sscanf(&opts.magic[n*2], "%2x", &c);
+      pchMessageStart[n] = (unsigned char) (c & 0xff);
+    }
+  }
+  if (opts.nMinimumHeight) {
+    printf("Using minimum height %i\n", opts.nMinimumHeight);
+    nMinimumHeight = opts.nMinimumHeight;
+  }
+  if (!opts.vSeeds.empty()) {
+    printf("Overriding DNS seeds\n");
+    swap(opts.vSeeds, vSeeds);
+  } else {
+    for (int i=0; seeds[i][0]; i++) {
+      vSeeds.emplace_back(seeds[i]);
+    }
   }
   if (!opts.ns) {
     printf("No nameserver set. Not starting DNS server.\n");
