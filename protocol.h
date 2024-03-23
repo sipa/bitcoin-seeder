@@ -16,9 +16,10 @@
 #include "uint256.h"
 
 extern bool fTestNet;
+extern unsigned short nDefaultP2Port;
 static inline unsigned short GetDefaultPort(const bool testnet = fTestNet)
 {
-    return testnet ? 18333 : 8333;
+    return nDefaultP2Port ? nDefaultP2Port : (testnet ? 18333 : 8333);
 }
 
 //
