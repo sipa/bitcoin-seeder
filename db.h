@@ -253,8 +253,8 @@ public:
   std::vector<CAddrReport> GetAll() {
     std::vector<CAddrReport> ret;
     SHARED_CRITICAL_BLOCK(cs) {
-      for (std::deque<int>::const_iterator it = ourId.begin(); it != ourId.end(); it++) {
-        const CAddrInfo &info = idToInfo[*it];
+      for (int id : ourId) {
+        const CAddrInfo &info = idToInfo.at(id);
         if (info.success > 0) {
           ret.push_back(info.GetReport());
         }
@@ -317,8 +317,8 @@ public:
   }
   void Add(const std::vector<CAddress> &vAddr, bool fForce = false) {
     CRITICAL_BLOCK(cs)
-      for (int i=0; i<vAddr.size(); i++)
-        Add_(vAddr[i], fForce);
+      for (const CAddress& addr : vAddr)
+        Add_(addr, fForce);
   }
   void Good(const CService &addr, int clientVersion, std::string clientSubVersion, int blocks, uint64_t services) {
     CRITICAL_BLOCK(cs)
@@ -350,11 +350,11 @@ public:
   }
   void ResultMany(const std::vector<CServiceResult> &ips) {
     CRITICAL_BLOCK(cs) {
-      for (int i=0; i<ips.size(); i++) {
-        if (ips[i].fGood) {
-          Good_(ips[i].service, ips[i].nClientV, ips[i].strClientV, ips[i].nHeight, ips[i].services);
+      for (const CServiceResult& res : ips) {
+        if (res.fGood) {
+          Good_(res.service, res.nClientV, res.strClientV, res.nHeight, res.services);
         } else {
-          Bad_(ips[i].service, ips[i].nBanTime);
+          Bad_(res.service, res.nBanTime);
         }
       }
     }

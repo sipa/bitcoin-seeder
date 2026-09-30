@@ -1,6 +1,9 @@
 #include "db.h"
 #include <stdlib.h>
 
+#include <algorithm>
+#include <iterator>
+
 using namespace std;
 
 int nMinimumHeight = 0;
@@ -156,25 +159,21 @@ void CAddrDb::Add_(const CAddress &addr, bool force) {
 
 void CAddrDb::GetIPs_(set<CNetAddr>& ips, uint64_t requestedFlags, int max, const bool* nets) {
   std::vector<int> goodIdFiltered;
-  for (std::set<int>::const_iterator it = goodId.begin(); it != goodId.end(); it++) {
-    if ((idToInfo[*it].services & requestedFlags) == requestedFlags)
-      goodIdFiltered.push_back(*it);
-  }
+  std::copy_if(goodId.begin(), goodId.end(), std::back_inserter(goodIdFiltered), [&](int id) {
+    return (idToInfo.at(id).services & requestedFlags) == requestedFlags;
+  });
 
-  if (!goodIdFiltered.size())
+  if (goodIdFiltered.empty())
     return;
 
-  if (max > goodIdFiltered.size() / 2)
-    max = goodIdFiltered.size() / 2;
-  if (max < 1)
-    max = 1;
+  max = std::max(1, std::min<int>(max, goodIdFiltered.size() / 2));
 
   set<int> ids;
   while (ids.size() < max) {
     ids.insert(goodIdFiltered[rand() % goodIdFiltered.size()]);
   }
-  for (set<int>::const_iterator it = ids.begin(); it != ids.end(); it++) {
-    CService &ip = idToInfo[*it].ip;
+  for (int id : ids) {
+    const CService &ip = idToInfo.at(id).ip;
     if (nets[ip.GetNetwork()])
       ips.insert(ip);
   }
