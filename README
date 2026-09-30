@@ -13,6 +13,8 @@ Features:
   1 day and 1 week, to base decisions on.
 * very low memory (a few tens of megabytes) and cpu requirements.
 * crawlers run in parallel (by default 24 threads simultaneously).
+* connects to nodes that support it using the encrypted BIP324 (v2)
+  transport protocol, falling back to v1 for nodes that turn out not to.
 
 REQUIREMENTS
 ------------
