@@ -118,7 +118,9 @@ class CNode {
     
     if (strCommand == "verack") {
       if (fGotVerAck) {
-        return false;
+        close(sock);
+        sock = INVALID_SOCKET;
+        return true;
       }
       fGotVerAck = true;
       GotVersion();
