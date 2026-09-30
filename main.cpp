@@ -417,7 +417,7 @@ extern "C" int GetIPList(void *data, char *requestedHostname, addr_t* addr, int 
 
   uint64_t requestedFlags = 0;
   int hostlen = strlen(requestedHostname);
-  if (hostlen > 1 && requestedHostname[0] == 'x' && requestedHostname[1] != '0') {
+  if (hostlen > 1 && (requestedHostname[0] == 'x' || requestedHostname[0] == 'X') && requestedHostname[1] != '0') {
     char *pEnd;
     uint64_t flags = (uint64_t)strtoull(requestedHostname+1, &pEnd, 16);
     if (*pEnd == '.' && pEnd <= requestedHostname+17 && std::find(thread->filterWhitelist.begin(), thread->filterWhitelist.end(), flags) != thread->filterWhitelist.end())
