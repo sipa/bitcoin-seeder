@@ -482,11 +482,18 @@ extern "C" void* ThreadStats(void*) {
   return nullptr;
 }
 
-static const string mainnet_seeds[] = {"dnsseed.bluematt.me", "bitseed.xf2.org", "dnsseed.bitcoin.dashjr.org", "seed.bitcoin.sipa.be", "kjy2eqzk4zwi5zd3.onion", ""};
-static const string testnet_seeds[] = {"testnet-seed.alexykot.me",
-                                       "testnet-seed.bitcoin.petertodd.org",
+static const string mainnet_seeds[] = {"dnsseed.bluematt.me",
+                                       "seed.bitcoin.jonasschnelli.ch",
+                                       "seed.btc.petertodd.net",
+                                       "seed.bitcoin.sprovoost.nl",
+                                       "dnsseed.emzy.de",
+                                       "seed.bitcoin.wiz.biz",
+                                       "seed.mainnet.achownodes.xyz",
+                                       ""};
+static const string testnet_seeds[] = {"testnet-seed.bitcoin.jonasschnelli.ch",
+                                       "seed.tbtc.petertodd.net",
                                        "testnet-seed.bluematt.me",
-                                       "testnet-seed.bitcoin.schildbach.de",
+                                       "seed.testnet.achownodes.xyz",
                                        ""};
 static const string *seeds = mainnet_seeds;
 static vector<string> vSeeds;
