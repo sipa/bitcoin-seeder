@@ -233,7 +233,11 @@ public:
       stats.nTracked = ourId.size();
       stats.nGood = goodId.size();
       stats.nNew = unkId.size();
-      stats.nAge = time(NULL) - idToInfo[ourId[0]].ourLastTry;
+      stats.nAge = 0;
+      if (!ourId.empty()) {
+        std::map<int, CAddrInfo>::const_iterator it = idToInfo.find(ourId.front());
+        if (it != idToInfo.end()) stats.nAge = time(NULL) - it->second.ourLastTry;
+      }
     }
   }
 
