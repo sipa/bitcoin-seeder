@@ -379,6 +379,7 @@ public:
 
 bool TestNode(const CService &cip, int &ban, int &clientV, std::string &clientSV, int &blocks, vector<CAddress>* vAddr, uint64_t& services) {
   bool fV2 = services & NODE_P2P_V2;
+  bool fDowngraded = false;
   try {
     while (true) {
       CNode node(cip, vAddr, fV2);
@@ -387,6 +388,7 @@ bool TestNode(const CService &cip, int &ban, int &clientV, std::string &clientSV
         // The node disconnected without sending anything after receiving our v2 handshake,
         // which is what a node not supporting v2 would do. Try again using v1.
         fV2 = false;
+        fDowngraded = true;
         continue;
       }
       if (!ret) {
@@ -398,6 +400,12 @@ bool TestNode(const CService &cip, int &ban, int &clientV, std::string &clientSV
       clientSV = node.GetClientSubVersion();
       blocks = node.GetStartingHeight();
       services = node.GetServices();
+      if (ret && fDowngraded) {
+        // The node did not accept a v2 connection, but v1 worked. Forget that it claims to
+        // support v2, so it's not returned for DNS queries filtering on NODE_P2P_V2, and v1 is
+        // used right away the next time.
+        services &= ~uint64_t{NODE_P2P_V2};
+      }
       return ret;
     }
   } catch(std::ios_base::failure& e) {
