@@ -8,16 +8,19 @@ Features:
 * regularly revisits known nodes to check their availability
 * bans nodes after enough failures, or bad behaviour
 * accepts nodes down to v0.3.19 to request new IP addresses from,
-  but only reports good post-v0.3.24 nodes.
+  but only reports good nodes that run protocol version 70001 (v0.8.0)
+  or later, and are synced up to a minimum block height.
 * keeps statistics over (exponential) windows of 2 hours, 8 hours,
-  1 day and 1 week, to base decisions on.
+  1 day, 1 week and 1 month, to base decisions on.
 * very low memory (a few tens of megabytes) and cpu requirements.
-* crawlers run in parallel (by default 24 threads simultaneously).
+* crawlers run in parallel (by default 96 threads simultaneously).
+* supports mainnet, testnet3, and other bitcoin-like networks.
+* the DNS server supports EDNS, and minimal responses to ANY queries.
 
 REQUIREMENTS
 ------------
 
-$ sudo apt-get install build-essential libboost-all-dev libssl-dev
+$ sudo apt-get install build-essential libboost-dev libssl-dev
 
 USAGE
 -----
@@ -33,10 +36,25 @@ dnsseed.example.com.   86400    IN      NS     vps.example.com.
 
 On the system vps.example.com, you can now run dnsseed:
 
-./dnsseed -h dnsseed.example.com -n vps.example.com
+./dnsseed -h dnsseed.example.com -n vps.example.com -m admin.example.com
 
-If you want the DNS server to report SOA records, please provide an
-e-mail address (with the @ part replaced by .) using -m.
+The -m option provides the e-mail address reported in SOA records, with
+the @ replaced by a . (so admin.example.com stands for admin@example.com).
+
+Run ./dnsseed --help for a list of all options.
+
+OTHER NETWORKS
+--------------
+
+By default, dnsseed crawls Bitcoin mainnet. Use --testnet for testnet3.
+
+To crawl another network, or to override the defaults, use:
+* --magic <hex>: the network magic bytes (e.g. 0b110907 for testnet3).
+* --p2port <port>: the P2P port nodes are expected to listen on.
+* --minheight <n>: the minimum block height a node must report to be
+  considered good.
+* -s <seed>: a DNS seed to bootstrap from. This can be given multiple
+  times, and replaces the built-in list.
 
 COMPILING
 ---------
