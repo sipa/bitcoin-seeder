@@ -15,7 +15,7 @@
 
 using namespace std;
 
-bool fTestNet = false;
+ChainType chainType = ChainType::MAIN;
 
 class CDnsSeedOpts {
 public:
@@ -24,7 +24,7 @@ public:
   int nP2Port;
   int nMinimumHeight;
   int nDnsThreads;
-  int fUseTestNet;
+  ChainType chain;
   int fWipeBan;
   int fWipeIgnore;
   const char *mbox;
@@ -38,7 +38,7 @@ public:
   std::vector<string> vSeeds;
   std::set<uint64_t> filter_whitelist;
 
-  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), nP2Port(0), nMinimumHeight(0), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false), ipv4_proxy(NULL), ipv6_proxy(NULL), magic(NULL) {}
+  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), nP2Port(0), nMinimumHeight(0), mbox(NULL), ns(NULL), host(NULL), tor(NULL), chain(ChainType::MAIN), fWipeBan(false), fWipeIgnore(false), ipv4_proxy(NULL), ipv6_proxy(NULL), magic(NULL) {}
 
   void ParseCommandLine(int argc, char **argv) {
     static const char *help = "Bitcoin-seeder\n"
@@ -85,7 +85,7 @@ public:
         {"p2port", required_argument, 0, 'b'},
         {"magic", required_argument, 0, 'q'},
         {"minheight", required_argument, 0, 'x'},
-        {"testnet", no_argument, &fUseTestNet, 1},
+        {"testnet", no_argument, 0, 'T'},
         {"wipeban", no_argument, &fWipeBan, 1},
         {"wipeignore", no_argument, &fWipeBan, 1},
         {"help", no_argument, 0, 'H'},
@@ -197,6 +197,11 @@ public:
         case 'x': {
           int n = strtol(optarg, NULL, 10);
           if (n > 0 && n <= 0x7fffffff) nMinimumHeight = n;
+          break;
+        }
+
+        case 'T': {
+          chain = ChainType::TESTNET3;
           break;
         }
 
@@ -556,14 +561,21 @@ int main(int argc, char **argv) {
     }
   }
   bool fDNS = true;
-  if (opts.fUseTestNet) {
+  chainType = opts.chain;
+  switch (chainType) {
+    case ChainType::MAIN: {
+      break;
+    }
+
+    case ChainType::TESTNET3: {
       printf("Using testnet.\n");
       pchMessageStart[0] = 0x0b;
       pchMessageStart[1] = 0x11;
       pchMessageStart[2] = 0x09;
       pchMessageStart[3] = 0x07;
       seeds = testnet_seeds;
-      fTestNet = true;
+      break;
+    }
   }
   if (opts.nP2Port) {
     printf("Using P2P port %i\n", opts.nP2Port);
