@@ -26,7 +26,6 @@ public:
   int nDnsThreads;
   int fUseTestNet;
   int fWipeBan;
-  int fWipeIgnore;
   const char *mbox;
   const char *ns;
   const char *host;
@@ -38,7 +37,7 @@ public:
   std::vector<string> vSeeds;
   std::set<uint64_t> filter_whitelist;
 
-  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), nP2Port(0), nMinimumHeight(0), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false), ipv4_proxy(NULL), ipv6_proxy(NULL), magic(NULL) {}
+  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), nP2Port(0), nMinimumHeight(0), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), ipv4_proxy(NULL), ipv6_proxy(NULL), magic(NULL) {}
 
   void ParseCommandLine(int argc, char **argv) {
     static const char *help = "Bitcoin-seeder\n"
@@ -62,7 +61,6 @@ public:
                               "--minheight <n> Minimum height of block chain\n"
                               "--testnet       Use testnet\n"
                               "--wipeban       Wipe list of banned nodes\n"
-                              "--wipeignore    Wipe list of ignored nodes\n"
                               "-?, --help      Show this text\n"
                               "\n";
     bool showHelp = false;
@@ -87,7 +85,6 @@ public:
         {"minheight", required_argument, 0, 'x'},
         {"testnet", no_argument, &fUseTestNet, 1},
         {"wipeban", no_argument, &fWipeBan, 1},
-        {"wipeignore", no_argument, &fWipeBan, 1},
         {"help", no_argument, 0, 'H'},
         {0, 0, 0, 0}
       };
@@ -601,8 +598,6 @@ int main(int argc, char **argv) {
     cf >> db;
     if (opts.fWipeBan)
         db.banned.clear();
-    if (opts.fWipeIgnore)
-        db.ResetIgnores();
     printf("done\n");
   }
   pthread_t threadDns, threadSeed, threadDump, threadStats;
