@@ -315,6 +315,8 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   // refuse names outside our zone
   int namel = strlen(name), hostl = strlen(opt->host);
   if (strcasecmp(name, opt->host) && (namel<hostl+2 || name[namel-hostl-1]!='.' || strcasecmp(name+namel-hostl,opt->host))) return set_error(outbuf, 5, outpos - outbuf);
+  // refuse classes other than IN (and ANY), as our zone only exists there
+  if (cls != CLASS_IN && cls != QCLASS_ANY) return set_error(outbuf, 5, outpos - outbuf);
   // offset of the zone apex name within the question (which is uncompressed,
   // and has the same length as its textual representation)
   int apex_offset = offset + (namel - hostl);
@@ -328,7 +330,7 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   
   int max_auth_size = 0;
   
-  if (!(is_apex && (typ == TYPE_NS || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY))) {
+  if (!(is_apex && (typ == TYPE_NS || typ == QTYPE_ANY))) {
     // authority section will be necessary, either NS or SOA
     unsigned char *newpos = outpos;
     write_record_ns(&newpos, outend, "", apex_offset, CLASS_IN, 0, opt->ns);
@@ -345,19 +347,19 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   int have_ns = 0;
 
   // NS records (only at the zone apex)
-  if (is_apex && (typ == TYPE_NS || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY)) {
+  if (is_apex && (typ == TYPE_NS || typ == QTYPE_ANY)) {
     int ret2 = write_record_ns(&outpos, outend - max_auth_size, "", offset, CLASS_IN, opt->nsttl, opt->ns);
     if (!ret2) { outbuf[7]++; have_ns++; }
   }
 
   // SOA records (only at the zone apex)
-  if (is_apex && (typ == TYPE_SOA || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY) && opt->mbox) {
+  if (is_apex && (typ == TYPE_SOA || typ == QTYPE_ANY) && opt->mbox) {
     int ret2 = write_record_soa(&outpos, outend - max_auth_size, "", offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), 604800, 86400, 2592000, 604800);
     if (!ret2) { outbuf[7]++; }
   }
   
   // A/AAAA records
-  if (exists && (typ == TYPE_A || typ == TYPE_AAAA || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY)) {
+  if (exists && (typ == TYPE_A || typ == TYPE_AAAA || typ == QTYPE_ANY)) {
     addr_t addr[32];
     int naddr = opt->cb((void*)opt, name, addr, 32, typ == TYPE_A || typ == QTYPE_ANY, typ == TYPE_AAAA || typ == QTYPE_ANY);
     int n = 0;
