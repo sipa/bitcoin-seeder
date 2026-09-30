@@ -56,6 +56,7 @@ typedef enum {
   TYPE_NS = 2,
   TYPE_CNAME = 5,
   TYPE_SOA = 6,
+  TYPE_HINFO = 13,
   TYPE_MX = 15,
   TYPE_AAAA = 28,
   TYPE_SRV = 33,
@@ -203,6 +204,28 @@ int static write_record_aaaa(unsigned char** outpos, const unsigned char *outend
   return error;
 }
 
+int static write_record_hinfo(unsigned char** outpos, const unsigned char *outend, const char *name, int offset, dns_class cls, int ttl, const char *cpu, const char *os) {
+  size_t cpul = strlen(cpu), osl = strlen(os);
+  if (cpul > 255 || osl > 255) return -1;
+  unsigned char *oldpos = *outpos;
+  int error = 0;
+  int ret = write_record(outpos, outend, name, offset, TYPE_HINFO, cls, ttl);
+  if (ret) return ret;
+  size_t rdlength = 1 + cpul + 1 + osl;
+  if (outend - *outpos < 2 + rdlength) {
+    error = -5;
+  } else {
+    // rdlength
+    *((*outpos)++) = rdlength >> 8; *((*outpos)++) = rdlength & 0xFF;
+    // rdata: two character-strings
+    *((*outpos)++) = cpul; memcpy(*outpos, cpu, cpul); *outpos += cpul;
+    *((*outpos)++) = osl; memcpy(*outpos, os, osl); *outpos += osl;
+    return 0;
+  }
+  *outpos = oldpos;
+  return error;
+}
+
 int static write_record_ns(unsigned char** outpos, const unsigned char *outend, const char *name, int offset, dns_class cls, int ttl, const char *ns) {
   unsigned char *oldpos = *outpos;
   int ret = write_record(outpos, outend, name, offset, TYPE_NS, cls, ttl);
@@ -341,7 +364,7 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   
   int max_auth_size = 0;
   
-  if (!(is_apex && (typ == TYPE_NS || typ == QTYPE_ANY))) {
+  if (!(is_apex && typ == TYPE_NS)) {
     // authority section will be necessary, either NS or SOA
     unsigned char *newpos = outpos;
     write_record_ns(&newpos, outend, "", apex_offset, CLASS_IN, 0, opt->ns);
@@ -359,23 +382,23 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   int have_ns = 0;
 
   // NS records (only at the zone apex)
-  if (is_apex && (typ == TYPE_NS || typ == QTYPE_ANY)) {
+  if (is_apex && typ == TYPE_NS) {
     int ret2 = write_record_ns(&outpos, outend - max_auth_size, "", offset, CLASS_IN, opt->nsttl, opt->ns);
 //    printf("wrote NS record: %i\n", ret2);
     if (!ret2) { outbuf[7]++; have_ns++; }
   }
 
   // SOA records (only at the zone apex)
-  if (is_apex && (typ == TYPE_SOA || typ == QTYPE_ANY) && opt->mbox) {
+  if (is_apex && typ == TYPE_SOA && opt->mbox) {
     int ret2 = write_record_soa(&outpos, outend - max_auth_size, "", offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), SOA_REFRESH, SOA_RETRY, SOA_EXPIRE, SOA_MINIMUM);
 //    printf("wrote SOA record: %i\n", ret2);
     if (!ret2) { outbuf[7]++; }
   }
   
   // A/AAAA records
-  if (exists && (typ == TYPE_A || typ == TYPE_AAAA || typ == QTYPE_ANY)) {
+  if (exists && (typ == TYPE_A || typ == TYPE_AAAA)) {
     addr_t addr[32];
-    int naddr = opt->cb((void*)opt, name, addr, 32, typ == TYPE_A || typ == QTYPE_ANY, typ == TYPE_AAAA || typ == QTYPE_ANY);
+    int naddr = opt->cb((void*)opt, name, addr, 32, typ == TYPE_A, typ == TYPE_AAAA);
     int n = 0;
     while (n < naddr) {
       int ret = 1;
@@ -390,6 +413,13 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
       } else
         break;
     }
+  }
+
+  // Respond to ANY queries with just a synthesized HINFO record, rather than
+  // all records, to limit the response size (RFC 8482 section 4.2).
+  if (exists && typ == QTYPE_ANY) {
+    int ret2 = write_record_hinfo(&outpos, outend - max_auth_size, "", offset, CLASS_IN, opt->datattl, "RFC8482", "");
+    if (!ret2) { outbuf[7]++; }
   }
   
   // Authority section
