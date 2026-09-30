@@ -318,6 +318,7 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   // offset of the zone apex name within the question (which is uncompressed,
   // and has the same length as its textual representation)
   int apex_offset = offset + (namel - hostl);
+  bool is_apex = (namel == hostl);
   
 //   printf("DNS: Request host='%s' type=%i class=%i\n", name, typ, cls);
   
@@ -325,7 +326,7 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   
   int max_auth_size = 0;
   
-  if (!((typ == TYPE_NS || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY))) {
+  if (!(is_apex && (typ == TYPE_NS || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY))) {
     // authority section will be necessary, either NS or SOA
     unsigned char *newpos = outpos;
     write_record_ns(&newpos, outend, "", apex_offset, CLASS_IN, 0, opt->ns);
@@ -342,15 +343,15 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
 
   int have_ns = 0;
 
-  // NS records
-  if ((typ == TYPE_NS || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY)) {
+  // NS records (only at the zone apex)
+  if (is_apex && (typ == TYPE_NS || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY)) {
     int ret2 = write_record_ns(&outpos, outend - max_auth_size, "", offset, CLASS_IN, opt->nsttl, opt->ns);
 //    printf("wrote NS record: %i\n", ret2);
     if (!ret2) { outbuf[7]++; have_ns++; }
   }
 
-  // SOA records
-  if ((typ == TYPE_SOA || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY) && opt->mbox) {
+  // SOA records (only at the zone apex)
+  if (is_apex && (typ == TYPE_SOA || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY) && opt->mbox) {
     int ret2 = write_record_soa(&outpos, outend - max_auth_size, "", offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), 604800, 86400, 2592000, 604800);
 //    printf("wrote SOA record: %i\n", ret2);
     if (!ret2) { outbuf[7]++; }
