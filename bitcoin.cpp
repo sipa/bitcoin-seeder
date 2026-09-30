@@ -12,6 +12,9 @@
 // (that is, until verack is received).
 static const int HANDSHAKE_TIMEOUT = 30;
 
+// Maximum time (in seconds) from initiating a connection until it is closed, no matter what.
+static const int CONNECTION_TIMEOUT = 60;
+
 using namespace std;
 
 class CNode {
@@ -248,12 +251,19 @@ public:
   }
   bool Run() {
     bool res = true;
-    const int64_t handshakeDeadline = time(NULL) + HANDSHAKE_TIMEOUT;
+    const int64_t start = time(NULL);
+    const int64_t handshakeDeadline = start + HANDSHAKE_TIMEOUT;
+    const int64_t connectionDeadline = start + CONNECTION_TIMEOUT;
     if (!ConnectSocket(you, sock)) return false;
     PushVersion();
     Send();
     int64 now;
     while (now = time(NULL), ban == 0 && (doneAfter == 0 || doneAfter > now) && sock != INVALID_SOCKET) {
+      if (now >= connectionDeadline) {
+        // Just drop the connection.
+        if (!doneAfter) res = false;
+        break;
+      }
       if (!doneAfter && now >= handshakeDeadline) {
         // printf("%s: BAD (handshake timeout)\n", ToString(you).c_str());
         res = false;
@@ -266,7 +276,7 @@ public:
       FD_SET(sock,&read_set);
       FD_SET(sock,&except_set);
       struct timeval wa;
-      wa.tv_sec = (doneAfter ? doneAfter : handshakeDeadline) - now;
+      wa.tv_sec = min<int64_t>(doneAfter ? doneAfter : handshakeDeadline, connectionDeadline) - now;
       wa.tv_usec = 0;
       int ret = select(sock+1, &read_set, NULL, &except_set, &wa);
       if (ret != 1) {
