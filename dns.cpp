@@ -55,9 +55,9 @@ typedef enum {
 
 
 //  0: ok
-// -1: premature end of input, forward reference, component > 63 char, invalid character
+// -1: premature end of input, compression pointer, component > 63 char, invalid character
 // -2: insufficient space in output
-int static parse_name(const unsigned char **inpos, const unsigned char *inend, const unsigned char *inbuf, char *buf, size_t bufsize) {
+int static parse_name(const unsigned char **inpos, const unsigned char *inend, char *buf, size_t bufsize) {
   size_t bufused = 0;
   int init = 1;
   do {
@@ -76,15 +76,8 @@ int static parse_name(const unsigned char **inpos, const unsigned char *inend, c
       buf[bufused++] = '.';
     } else
       init = 0;
-    // handle references
-    if ((octet & 0xC0) == 0xC0) {
-      if (*inpos == inend)
-        return -1;
-      int ref = ((octet - 0xC0) << 8) + *((*inpos)++);
-      if (ref < 0 || ref >= (*inpos)-inbuf-2) return -1;
-      const unsigned char *newbuf = inbuf + ref;
-      return parse_name(&newbuf, (*inpos) - 2, inbuf, buf+bufused, bufsize-bufused);
-    }
+    // Compression pointers (and other label types) are not supported. There is
+    // nothing before the question for a pointer in it to refer to anyway.
     if (octet > 63) return -1;
     // copy label
     while (octet) {
@@ -295,7 +288,7 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   const unsigned char *inend = inbuf + insize;
   char name[256];
   int offset = inpos - inbuf;
-  int ret = parse_name(&inpos, inend, inbuf, name, 256);
+  int ret = parse_name(&inpos, inend, name, 256);
   if (ret == -1) return set_error(outbuf, 1);
   if (ret == -2) return set_error(outbuf, 5);
   int namel = strlen(name), hostl = strlen(opt->host);
