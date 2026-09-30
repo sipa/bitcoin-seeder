@@ -319,6 +319,10 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   // and has the same length as its textual representation)
   int apex_offset = offset + (namel - hostl);
   bool is_apex = (namel == hostl);
+  // names other than the zone apex may not exist, in which case we respond
+  // with NXDOMAIN
+  bool exists = is_apex || opt->cb((void*)opt, name, NULL, 0, 0, 0) >= 0;
+  if (!exists) outbuf[3] |= 3;
   
   // calculate max size of authority section
   
@@ -353,7 +357,7 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   }
   
   // A/AAAA records
-  if ((typ == TYPE_A || typ == TYPE_AAAA || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY)) {
+  if (exists && (typ == TYPE_A || typ == TYPE_AAAA || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY)) {
     addr_t addr[32];
     int naddr = opt->cb((void*)opt, name, addr, 32, typ == TYPE_A || typ == QTYPE_ANY, typ == TYPE_AAAA || typ == QTYPE_ANY);
     int n = 0;

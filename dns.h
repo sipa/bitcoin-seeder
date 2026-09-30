@@ -19,6 +19,10 @@ struct dns_opt_t {
   const char *addr;
   const char *ns;
   const char *mbox;
+  // Callback to look up addresses for a name in the zone. Returns -1 if the
+  // name does not exist, and otherwise the number of addresses (at most max,
+  // and only of the requested families) written to addr. When called with
+  // ipv4 and ipv6 both zero, only checks whether the name exists.
   int (*cb)(void *opt, char *requested_hostname, addr_t *addr, int max, int ipv4, int ipv6);
   // stats
   uint64_t nRequests;
