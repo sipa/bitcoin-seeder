@@ -102,6 +102,10 @@ public:
         }
 
         case 'h': {
+          // Strip the trailing dot of a fully-qualified name, as names in DNS
+          // requests are compared without one.
+          size_t len = strlen(optarg);
+          if (len > 1 && optarg[len - 1] == '.') optarg[len - 1] = 0;
           host = optarg;
           break;
         }
