@@ -17,7 +17,7 @@ Features:
 REQUIREMENTS
 ------------
 
-$ sudo apt-get install build-essential libssl-dev
+$ sudo apt-get install build-essential
 
 USAGE
 -----
@@ -41,8 +41,8 @@ e-mail address (with the @ part replaced by .) using -m.
 COMPILING
 ---------
 
-Compiling will require a C++20 compiler and OpenSSL. On debian systems, the
-latter is provided by `libssl-dev`.
+Compiling will require a C++20 compiler (and a C compiler, for the included
+libsecp256k1).
 
 $ make
 

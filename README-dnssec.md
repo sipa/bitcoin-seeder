@@ -204,7 +204,7 @@ rejects them there; leave the line out in that case.
 Install the build dependencies as root:
 
 ```sh
-apt install build-essential libssl-dev git
+apt install build-essential git
 ```
 
 As the `seeder` user, clone and build the repository, and start dnsseed:
