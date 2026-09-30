@@ -2,7 +2,9 @@ CXXFLAGS = -O3 -g0
 CFLAGS = -O2 -g0
 LDFLAGS = $(CXXFLAGS)
 
-OBJS = dns.o bitcoin.o netbase.o protocol.o db.o main.o util.o crypto/sha256.o
+OBJS = dns.o bitcoin.o netbase.o protocol.o db.o main.o util.o
+OBJS += crypto/sha256.o crypto/hmac_sha256.o crypto/hkdf_sha256_32.o
+OBJS += crypto/chacha20.o crypto/poly1305.o crypto/chacha20poly1305.o support/cleanse.o
 
 # libsecp256k1 (in the secp256k1/ subtree), built with the ElligatorSwift module (needed for BIP324),
 # and its default table sizes.
@@ -12,7 +14,7 @@ SECP256K1_CFLAGS = -Isecp256k1/include -DENABLE_MODULE_ELLSWIFT=1 -DECMULT_WINDO
 dnsseed: $(OBJS) $(SECP256K1_OBJS)
 	g++ -pthread $(LDFLAGS) -o dnsseed $(OBJS) $(SECP256K1_OBJS)
 
-%.o: %.cpp *.h compat/*.h crypto/*.h
+%.o: %.cpp *.h compat/*.h crypto/*.h support/*.h
 	g++ -std=c++20 -pthread -I. -Isecp256k1/include $(CXXFLAGS) -Wall -Wno-unused -Wno-sign-compare -Wno-reorder -Wno-comment -c -o $@ $<
 
 secp256k1/src/%.o: secp256k1/src/%.c
