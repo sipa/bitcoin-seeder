@@ -2,7 +2,9 @@ CXXFLAGS = -O3 -g0
 CFLAGS = -O2 -g0
 LDFLAGS = $(CXXFLAGS)
 
-OBJS = dns.o bitcoin.o bitcoin_core/netbase.o bitcoin_core/protocol.o db.o main.o bitcoin_core/util.o bitcoin_core/crypto/sha256.o
+OBJS = dns.o bitcoin.o bitcoin_core/netbase.o bitcoin_core/protocol.o db.o main.o bitcoin_core/util.o
+OBJS += bitcoin_core/crypto/sha256.o bitcoin_core/crypto/hmac_sha256.o bitcoin_core/crypto/hkdf_sha256_32.o
+OBJS += bitcoin_core/crypto/chacha20.o bitcoin_core/crypto/poly1305.o bitcoin_core/crypto/chacha20poly1305.o bitcoin_core/support/cleanse.o
 
 # libsecp256k1 (in the secp256k1/ subtree), built with the ElligatorSwift module (needed for BIP324),
 # and its default table sizes.
