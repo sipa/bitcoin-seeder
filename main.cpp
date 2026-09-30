@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <tuple>
 
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h>
@@ -338,8 +339,7 @@ extern "C" void* ThreadCrawler(void* data) {
       continue;
     }
     vector<CAddress> addr;
-    for (int i=0; i<ips.size(); i++) {
-      CServiceResult &res = ips[i];
+    for (CServiceResult& res : ips) {
       res.nBanTime = 0;
       res.nClientV = 0;
       res.nHeight = 0;
@@ -389,16 +389,16 @@ public:
       thisflag.nIPv4 = 0;
       thisflag.nIPv6 = 0;
       thisflag.cache.reserve(ips.size());
-      for (set<CNetAddr>::iterator it = ips.begin(); it != ips.end(); it++) {
+      for (const CNetAddr& ip : ips) {
         struct in_addr addr;
         struct in6_addr addr6;
-        if ((*it).GetInAddr(&addr)) {
+        if (ip.GetInAddr(&addr)) {
           addr_t a;
           a.v = 4;
           memcpy(&a.data.v4, &addr, 4);
           thisflag.cache.push_back(a);
           thisflag.nIPv4++;
-        } else if ((*it).GetIn6Addr(&addr6)) {
+        } else if (ip.GetIn6Addr(&addr6)) {
           addr_t a;
           a.v = 6;
           memcpy(&a.data.v6, &addr6, 16);
@@ -481,18 +481,6 @@ extern "C" void* ThreadDNS(void* arg) {
   return nullptr;
 }
 
-int StatCompare(const CAddrReport& a, const CAddrReport& b) {
-  if (a.uptime[4] == b.uptime[4]) {
-    if (a.uptime[3] == b.uptime[3]) {
-      return a.clientVersion > b.clientVersion;
-    } else {
-      return a.uptime[3] > b.uptime[3];
-    }
-  } else {
-    return a.uptime[4] > b.uptime[4];
-  }
-}
-
 extern "C" void* ThreadDumper(void*) {
   int count = 0;
   do {
@@ -501,7 +489,10 @@ extern "C" void* ThreadDumper(void*) {
         count++;
     {
       vector<CAddrReport> v = db.GetAll();
-      sort(v.begin(), v.end(), StatCompare);
+      // Sort by 30-day uptime, then 7-day uptime, then client version (all descending).
+      std::sort(v.begin(), v.end(), [](const CAddrReport& a, const CAddrReport& b) {
+        return std::tie(a.uptime[4], a.uptime[3], a.clientVersion) > std::tie(b.uptime[4], b.uptime[3], b.clientVersion);
+      });
       FILE *f = fopen("dnsseed.dat.new","w+");
       if (f) {
         {
@@ -513,14 +504,9 @@ extern "C" void* ThreadDumper(void*) {
       FILE *d = fopen("dnsseed.dump", "w");
       if (d) fprintf(d, "# address                                        good  lastSuccess    %%(2h)   %%(8h)   %%(1d)   %%(7d)  %%(30d)  blocks      svcs  version\n");
       double stat[5]={0,0,0,0,0};
-      for (vector<CAddrReport>::const_iterator it = v.begin(); it < v.end(); it++) {
-        CAddrReport rep = *it;
+      for (const CAddrReport& rep : v) {
         if (d) fprintf(d, "%-47s  %4d  %11" PRId64 "  %6.2f%% %6.2f%% %6.2f%% %6.2f%% %6.2f%%  %6i  %08" PRIx64 "  %5i \"%s\"\n", rep.ip.ToString().c_str(), (int)rep.fGood, rep.lastSuccess, 100.0*rep.uptime[0], 100.0*rep.uptime[1], 100.0*rep.uptime[2], 100.0*rep.uptime[3], 100.0*rep.uptime[4], rep.blocks, rep.services, rep.clientVersion, SanitizeString(rep.clientSubVersion).c_str());
-        stat[0] += rep.uptime[0];
-        stat[1] += rep.uptime[1];
-        stat[2] += rep.uptime[2];
-        stat[3] += rep.uptime[3];
-        stat[4] += rep.uptime[4];
+        for (int i = 0; i < 5; i++) stat[i] += rep.uptime[i];
       }
       if (d) fclose(d);
       FILE *ff = fopen("dnsstats.log", "a");
@@ -552,9 +538,9 @@ extern "C" void* ThreadStats(void*) {
     printf("\x1b[s");
     uint64_t requests = 0;
     uint64_t queries = 0;
-    for (unsigned int i=0; i<dnsThread.size(); i++) {
-      requests += dnsThread[i]->dns_opt.nRequests;
-      queries += dnsThread[i]->dbQueries;
+    for (const CDnsThread* thread : dnsThread) {
+      requests += thread->dns_opt.nRequests;
+      queries += thread->dbQueries;
     }
     printf("%s %i/%i available (%i tried in %is, %i new, %i active), %i banned; %llu DNS requests, %llu db queries", c, stats.nGood, stats.nAvail, stats.nTracked, stats.nAge, stats.nNew, stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned, (unsigned long long)requests, (unsigned long long)queries);
     Sleep(1000);
@@ -808,8 +794,8 @@ extern "C" void* ThreadSeeder(void*) {
     for (const string& seed: vDnsSeeds) {
       vector<CNetAddr> ips;
       LookupHost(seed.c_str(), ips);
-      for (vector<CNetAddr>::iterator it = ips.begin(); it != ips.end(); it++) {
-        db.Add(CService(*it, GetDefaultPort()), true);
+      for (const CNetAddr& ip : ips) {
+        db.Add(CService(ip, GetDefaultPort()), true);
       }
     }
     Sleep(1800000);
@@ -823,11 +809,10 @@ int main(int argc, char **argv) {
   CDnsSeedOpts opts;
   opts.ParseCommandLine(argc, argv);
   printf("Supporting whitelisted filters: ");
-  for (std::set<uint64_t>::const_iterator it = opts.filter_whitelist.begin(); it != opts.filter_whitelist.end(); it++) {
-      if (it != opts.filter_whitelist.begin()) {
-          printf(",");
-      }
-      printf("0x%lx", (unsigned long)*it);
+  const char* sep = "";
+  for (uint64_t flags : opts.filter_whitelist) {
+    printf("%s0x%lx", sep, (unsigned long)flags);
+    sep = ",";
   }
   printf("\n");
   if (opts.tor) {
