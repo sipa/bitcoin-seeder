@@ -216,7 +216,7 @@ protected:
   void Bad_(const CService &ip, int ban);  // mark an IP as bad (and optionally ban it) (must have been returned by Get_)
   void Skipped_(const CService &ip);       // mark an IP as skipped (must have been returned by Get_)
   int Lookup_(const CService &ip);         // look up id of an IP
-  void GetIPs_(std::set<CNetAddr>& ips, uint64_t requestedFlags, int max, const bool *nets); // get a random set of IPs (shared lock only)
+  void GetIPs_(std::set<CNetAddr>& ips, uint64_t requestedFlags, int max, const bool *nets, bool fallback); // get a random set of IPs (shared lock only)
 
 public:
   std::map<CService, int64_t> banned; // nodes that are banned, with their unban time (a)
@@ -351,8 +351,10 @@ public:
       }
     }
   }
-  void GetIPs(std::set<CNetAddr>& ips, uint64_t requestedFlags, int max, const bool *nets) {
+  // Get a random set of good IPs. If there are no good IPs at all and fallback is true, a single
+  // other (not necessarily working) IP may be returned instead.
+  void GetIPs(std::set<CNetAddr>& ips, uint64_t requestedFlags, int max, const bool *nets, bool fallback = true) {
     SHARED_CRITICAL_BLOCK(cs)
-      GetIPs_(ips, requestedFlags, max, nets);
+      GetIPs_(ips, requestedFlags, max, nets, fallback);
   }
 };
