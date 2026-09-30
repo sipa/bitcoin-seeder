@@ -29,6 +29,11 @@
 #define SOA_EXPIRE 2592000
 #define SOA_MINIMUM 60
 
+// The UDP payload size we advertise in EDNS OPT records, and the size of such
+// a record (without options).
+#define EDNS_UDP_SIZE BUFLEN
+#define OPT_SIZE 11
+
 // Socket option to receive the destination address of incoming packets (as
 // an IPV6_PKTINFO control message), so replies can be sent from that address.
 #if defined(IPV6_RECVPKTINFO)
@@ -60,6 +65,7 @@ typedef enum {
   TYPE_MX = 15,
   TYPE_AAAA = 28,
   TYPE_SRV = 33,
+  TYPE_OPT = 41,
   QTYPE_ANY = 255
 } dns_type;
 
@@ -105,6 +111,55 @@ int static parse_name(const unsigned char **inpos, const unsigned char *inend, c
       buf[bufused++] = c;
     }
   } while(1);
+}
+
+//  0: ok
+// -1: premature end of input, component > 63 characters
+int static skip_name(const unsigned char **inpos, const unsigned char *inend) {
+  do {
+    if (*inpos == inend)
+      return -1;
+    int octet = *((*inpos)++);
+    if (octet == 0)
+      return 0;
+    // a compression pointer ends the name
+    if ((octet & 0xC0) == 0xC0) {
+      if (*inpos == inend)
+        return -1;
+      (*inpos)++;
+      return 0;
+    }
+    if (octet > 63) return -1;
+    if (inend - *inpos < octet)
+      return -1;
+    *inpos += octet;
+  } while(1);
+}
+
+// Parse the resource records in the answer, authority, and additional sections
+// of a request, looking for an EDNS OPT record (RFC 6891). On success,
+// *edns_version is set to its EDNS version, or to -1 if there is none.
+//  0: ok
+// -1: malformed input, or invalid OPT record(s)
+int static parse_edns(const unsigned char *inpos, const unsigned char *inend, int nrecords, int nadditional, int *edns_version) {
+  *edns_version = -1;
+  for (int i = 0; i < nrecords + nadditional; i++) {
+    bool root = inpos < inend && *inpos == 0;
+    if (skip_name(&inpos, inend)) return -1;
+    if (inend - inpos < 10) return -1;
+    int typ = (inpos[0] << 8) + inpos[1];
+    int rdlength = (inpos[8] << 8) + inpos[9];
+    if (inend - inpos < 10 + rdlength) return -1;
+    if (typ == TYPE_OPT) {
+      // there can only be one OPT record, in the additional section, and
+      // owned by the root
+      if (i < nrecords || *edns_version >= 0 || !root) return -1;
+      // the TTL field holds the extended rcode, version, and flags
+      *edns_version = inpos[5];
+    }
+    inpos += 10 + rdlength;
+  }
+  return 0;
 }
 
 //  0: k
@@ -300,6 +355,25 @@ static ssize_t set_error(unsigned char* outbuf, int error, ssize_t len) {
   return len;
 }
 
+// Append an (empty) OPT record to the response in outbuf of length len, if
+// edns is set. ext_rcode holds the upper 8 bits of the extended rcode.
+static ssize_t add_opt(unsigned char* outbuf, ssize_t len, bool edns, int ext_rcode) {
+  if (!edns) return len;
+  unsigned char *outpos = outbuf + len;
+  // name (root), type
+  *(outpos++) = 0;
+  *(outpos++) = TYPE_OPT >> 8; *(outpos++) = TYPE_OPT & 0xFF;
+  // class: our UDP payload size
+  *(outpos++) = EDNS_UDP_SIZE >> 8; *(outpos++) = EDNS_UDP_SIZE & 0xFF;
+  // TTL: extended rcode, version (0), and flags (none; DNSSEC is not supported,
+  // so DO is not set)
+  *(outpos++) = ext_rcode; *(outpos++) = 0; *(outpos++) = 0; *(outpos++) = 0;
+  // rdlength (no options)
+  *(outpos++) = 0; *(outpos++) = 0;
+  outbuf[11]++;
+  return outpos - outbuf;
+}
+
 ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insize, unsigned char* outbuf) {
   if (insize < 12) // DNS header
     return -1;
@@ -322,33 +396,47 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   if (((inbuf[2] & 120) >> 3) != 0) return set_error(outbuf, 4, 12);
   // check questions
   int nquestion = (inbuf[4] << 8) + inbuf[5];
-  if (nquestion == 0) return set_error(outbuf, 0, 12);
   // multiple questions are invalid (RFC 9619)
   if (nquestion > 1) return set_error(outbuf, 1, 12);
   const unsigned char *inpos = inbuf + 12;
   const unsigned char *inend = inbuf + insize;
   char name[256];
   int offset = inpos - inbuf;
-  int ret = parse_name(&inpos, inend, name, 256);
-  if (ret == -1) return set_error(outbuf, 1, 12);
-  if (ret == -2) return set_error(outbuf, 5, 12);
-  if (inend - inpos < 4) return set_error(outbuf, 1, 12);
-  // copy question to output
-  memcpy(outbuf+12, inbuf+12, inpos+4 - (inbuf+12));
-  outbuf[5] = 1;
-  
-  int typ = (inpos[0] << 8) + inpos[1];
-  int cls = (inpos[2] << 8) + inpos[3];
-  inpos += 4;
+  int typ = 0, cls = 0;
+  if (nquestion == 1) {
+    int ret = parse_name(&inpos, inend, name, 256);
+    if (ret == -1) return set_error(outbuf, 1, 12);
+    if (ret == -2) return set_error(outbuf, 5, 12);
+    if (inend - inpos < 4) return set_error(outbuf, 1, 12);
+    // copy question to output
+    memcpy(outbuf+12, inbuf+12, inpos+4 - (inbuf+12));
+    outbuf[5] = 1;
+
+    typ = (inpos[0] << 8) + inpos[1];
+    cls = (inpos[2] << 8) + inpos[3];
+    inpos += 4;
+  }
   
   unsigned char *outpos = outbuf+(inpos-inbuf);
-  unsigned char *outend = outbuf + BUFLEN;
+
+  // look for an EDNS OPT record in the rest of the request
+  int edns_version;
+  int nrecords = (inbuf[6] << 8) + inbuf[7] + (inbuf[8] << 8) + inbuf[9];
+  int nadditional = (inbuf[10] << 8) + inbuf[11];
+  if (parse_edns(inpos, inend, nrecords, nadditional, &edns_version)) return set_error(outbuf, 1, outpos - outbuf);
+  bool edns = edns_version >= 0;
+  // respond to unsupported EDNS versions with BADVERS (16, which does not fit
+  // in the header's rcode field; its upper bits go in the OPT record)
+  if (edns_version > 0) return add_opt(outbuf, set_error(outbuf, 0, outpos - outbuf), edns, 1);
+  if (nquestion == 0) return add_opt(outbuf, set_error(outbuf, 0, 12), edns, 0);
+  // leave room for the OPT record in the response
+  unsigned char *outend = outbuf + BUFLEN - (edns ? OPT_SIZE : 0);
 
   // refuse names outside our zone
   int namel = strlen(name), hostl = strlen(opt->host);
-  if (strcasecmp(name, opt->host) && (namel<hostl+2 || name[namel-hostl-1]!='.' || strcasecmp(name+namel-hostl,opt->host))) return set_error(outbuf, 5, outpos - outbuf);
+  if (strcasecmp(name, opt->host) && (namel<hostl+2 || name[namel-hostl-1]!='.' || strcasecmp(name+namel-hostl,opt->host))) return add_opt(outbuf, set_error(outbuf, 5, outpos - outbuf), edns, 0);
   // refuse classes other than IN (and ANY), as our zone only exists there
-  if (cls != CLASS_IN && cls != QCLASS_ANY) return set_error(outbuf, 5, outpos - outbuf);
+  if (cls != CLASS_IN && cls != QCLASS_ANY) return add_opt(outbuf, set_error(outbuf, 5, outpos - outbuf), edns, 0);
   // offset of the zone apex name within the question (which is uncompressed,
   // and has the same length as its textual representation)
   int apex_offset = offset + (namel - hostl);
@@ -435,7 +523,7 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   // set AA
   outbuf[2] |= 4;
   
-  return outpos - outbuf;
+  return add_opt(outbuf, outpos - outbuf, edns, 0);
 }
 
 static int listenSocket = -1;
