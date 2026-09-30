@@ -146,8 +146,10 @@ class CNode {
     
     if (strCommand == "verack") {
       if (fGotVerAck) {
-        // printf("%s: sent duplicate verack\n", ToString(you).c_str());
-        return false;
+        // printf("%s: BAD (duplicate verack)\n", ToString(you).c_str());
+        close(sock);
+        sock = INVALID_SOCKET;
+        return true;
       }
       fGotVerAck = true;
       this->vRecv.SetVersion(min(nVersion, PROTOCOL_VERSION));
