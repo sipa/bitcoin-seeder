@@ -315,6 +315,9 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   // refuse names outside our zone
   int namel = strlen(name), hostl = strlen(opt->host);
   if (strcasecmp(name, opt->host) && (namel<hostl+2 || name[namel-hostl-1]!='.' || strcasecmp(name+namel-hostl,opt->host))) return set_error(outbuf, 5, outpos - outbuf);
+  // offset of the zone apex name within the question (which is uncompressed,
+  // and has the same length as its textual representation)
+  int apex_offset = offset + (namel - hostl);
   
 //   printf("DNS: Request host='%s' type=%i class=%i\n", name, typ, cls);
   
@@ -325,11 +328,11 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   if (!((typ == TYPE_NS || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY))) {
     // authority section will be necessary, either NS or SOA
     unsigned char *newpos = outpos;
-    write_record_ns(&newpos, outend, "", offset, CLASS_IN, 0, opt->ns);
+    write_record_ns(&newpos, outend, "", apex_offset, CLASS_IN, 0, opt->ns);
     max_auth_size = newpos - outpos;
 
     newpos = outpos;
-    write_record_soa(&newpos, outend, "", offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), 604800, 86400, 2592000, 604800);
+    write_record_soa(&newpos, outend, "", apex_offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), 604800, 86400, 2592000, 604800);
     if (max_auth_size < newpos - outpos)
         max_auth_size = newpos - outpos;
 //    printf("Authority section will claim %i bytes max\n", max_auth_size);
@@ -375,7 +378,7 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   
   // Authority section
   if (!have_ns && outbuf[7]) {
-    int ret2 = write_record_ns(&outpos, outend, "", offset, CLASS_IN, opt->nsttl, opt->ns);
+    int ret2 = write_record_ns(&outpos, outend, "", apex_offset, CLASS_IN, opt->nsttl, opt->ns);
 //    printf("wrote NS record: %i\n", ret2);
     if (!ret2) {
       outbuf[9]++;
@@ -386,7 +389,7 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
     // response. If we replied with NS above we'd create a bad horizontal
     // referral loop, as the NS response indicates where the resolver should
     // try next.
-    int ret2 = write_record_soa(&outpos, outend, "", offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), 604800, 86400, 2592000, 604800);
+    int ret2 = write_record_soa(&outpos, outend, "", apex_offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), 604800, 86400, 2592000, 604800);
 //    printf("wrote SOA record: %i\n", ret2);
     if (!ret2) { outbuf[9]++; }
   }
