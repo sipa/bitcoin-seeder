@@ -52,6 +52,7 @@ bool CAddrDb::Get_(CServiceResult &ip, int &wait) {
       idToInfo[ret].ourLastTry = now;
     } else {
       ip.service = idToInfo[ret].ip;
+      ip.services = idToInfo[ret].services;
       ip.ourLastSuccess = idToInfo[ret].ourLastSuccess;
       break;
     }

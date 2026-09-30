@@ -49,6 +49,7 @@ class CNode {
   int ban;
   int64_t doneAfter;
   CAddress you;
+  bool fV2;
   bool fGotVersion;
   bool fGotVerAck;
   bool fGotAddr;
@@ -239,7 +240,13 @@ class CNode {
   bool ProcessBytes(std::span<const uint8_t> bytes) {
     while (!bytes.empty()) {
       if (!m_transport->ReceivedBytes(bytes)) {
-        ban = 100000;
+        if (fV2) {
+          // A failed v2 handshake or decryption failure; not reason for a ban.
+          close(sock);
+          sock = INVALID_SOCKET;
+        } else {
+          ban = 100000;
+        }
         return true;
       }
       if (m_transport->ReceivedMessageComplete()) {
@@ -272,8 +279,12 @@ class CNode {
   }
   
 public:
-  CNode(const CService& ip, vector<CAddress>* vAddrIn) : sock(INVALID_SOCKET), you(ip), vAddr(vAddrIn), ban(0), doneAfter(0), nVersion(0), nStartingHeight(0) {
-    m_transport = std::make_unique<V1Transport>();
+  CNode(const CService& ip, vector<CAddress>* vAddrIn, bool fV2In) : sock(INVALID_SOCKET), you(ip), vAddr(vAddrIn), ban(0), doneAfter(0), nVersion(0), nStartingHeight(0), fV2(fV2In) {
+    if (fV2) {
+      m_transport = std::make_unique<V2Transport>();
+    } else {
+      m_transport = std::make_unique<V1Transport>();
+    }
     fGotVersion = false;
     fGotVerAck = false;
     fGotAddr = false;
@@ -360,22 +371,35 @@ public:
   uint64_t GetServices() {
     return you.nServices;
   }
+
+  bool ShouldReconnectV1() {
+    return m_transport->ShouldReconnectV1();
+  }
 };
 
 bool TestNode(const CService &cip, int &ban, int &clientV, std::string &clientSV, int &blocks, vector<CAddress>* vAddr, uint64_t& services) {
+  bool fV2 = services & NODE_P2P_V2;
   try {
-    CNode node(cip, vAddr);
-    bool ret = node.Run();
-    if (!ret) {
-      ban = node.GetBan();
-    } else {
-      ban = 0;
+    while (true) {
+      CNode node(cip, vAddr, fV2);
+      bool ret = node.Run();
+      if (!ret && fV2 && node.ShouldReconnectV1()) {
+        // The node disconnected without sending anything after receiving our v2 handshake,
+        // which is what a node not supporting v2 would do. Try again using v1.
+        fV2 = false;
+        continue;
+      }
+      if (!ret) {
+        ban = node.GetBan();
+      } else {
+        ban = 0;
+      }
+      clientV = node.GetClientVersion();
+      clientSV = node.GetClientSubVersion();
+      blocks = node.GetStartingHeight();
+      services = node.GetServices();
+      return ret;
     }
-    clientV = node.GetClientVersion();
-    clientSV = node.GetClientSubVersion();
-    blocks = node.GetStartingHeight();
-    services = node.GetServices();
-    return ret;
   } catch(std::ios_base::failure& e) {
     ban = 0;
     return false;
