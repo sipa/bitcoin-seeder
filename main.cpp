@@ -893,13 +893,17 @@ int main(int argc, char **argv) {
   }
   pthread_t threadDns, threadSeed, threadDump, threadStats, threadZone;
   if (fDNS) {
-    printf("Starting %i DNS threads for %s on %s (port %i)...", opts.nDnsThreads, opts.host, opts.ns, opts.nPort);
     dnsThread.clear();
     for (int i=0; i<opts.nDnsThreads; i++) {
       dnsThread.push_back(new CDnsThread(&opts, i));
+    }
+    if (dnsserver_init(&dnsThread[0]->dns_opt) < 0) {
+      exit(1);
+    }
+    printf("Starting %i DNS threads for %s on %s (port %i)...", opts.nDnsThreads, opts.host, opts.ns, opts.nPort);
+    for (int i=0; i<opts.nDnsThreads; i++) {
       pthread_create(&threadDns, NULL, ThreadDNS, dnsThread[i]);
       printf(".");
-      Sleep(20);
     }
     printf("done\n");
   }

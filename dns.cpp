@@ -13,6 +13,7 @@
 #include <arpa/inet.h>
 #include <time.h>
 #include <ctype.h>
+#include <errno.h>
 #include <unistd.h>
 
 #include "dns.h"
@@ -395,24 +396,35 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
 
 static int listenSocket = -1;
 
+int dnsserver_init(const dns_opt_t *opt) {
+  struct sockaddr_in6 si_me;
+  memset((char *) &si_me, 0, sizeof(si_me));
+  si_me.sin6_family = AF_INET6;
+  si_me.sin6_port = htons(opt->port);
+  if (inet_pton(AF_INET6, opt->addr, &si_me.sin6_addr) != 1) {
+    fprintf(stderr, "Invalid address to listen on: %s\n", opt->addr);
+    return -1;
+  }
+  if ((listenSocket=socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP))==-1) {
+    fprintf(stderr, "Unable to create DNS socket: %s\n", strerror(errno));
+    return -1;
+  }
+  int sockopt = 1;
+  setsockopt(listenSocket, IPPROTO_IPV6, DSTADDR_SOCKOPT, &sockopt, sizeof sockopt);
+  if (bind(listenSocket, (struct sockaddr*)&si_me, sizeof(si_me))==-1) {
+    fprintf(stderr, "Unable to bind DNS socket to [%s]:%i: %s\n", opt->addr, opt->port, strerror(errno));
+    close(listenSocket);
+    listenSocket = -1;
+    return -1;
+  }
+  return 0;
+}
+
 int dnsserver(dns_opt_t *opt) {
   struct sockaddr_in6 si_other;
-  if (listenSocket == -1) {
-    struct sockaddr_in6 si_me;
-    if ((listenSocket=socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP))==-1) {
-      listenSocket = -1;
-      return -1;
-    }
-    int sockopt = 1;
-    setsockopt(listenSocket, IPPROTO_IPV6, DSTADDR_SOCKOPT, &sockopt, sizeof sockopt);
-    memset((char *) &si_me, 0, sizeof(si_me));
-    si_me.sin6_family = AF_INET6;
-    si_me.sin6_port = htons(opt->port);
-    inet_pton(AF_INET6, opt->addr, &si_me.sin6_addr);
-    if (bind(listenSocket, (struct sockaddr*)&si_me, sizeof(si_me))==-1)
-      return -2;
-  }
-  
+  if (listenSocket == -1)
+    return -1;
+
   unsigned char inbuf[BUFLEN], outbuf[BUFLEN];
   for (; 1; ++(opt->nRequests))
   {
