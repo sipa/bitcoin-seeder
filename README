@@ -14,6 +14,7 @@ Features:
 * very low memory (a few tens of megabytes) and cpu requirements.
 * crawlers run in parallel (by default 24 threads simultaneously).
 * the DNS server supports EDNS, and minimal responses to ANY queries.
+* optionally, the DNS server also answers requests over TCP (--tcp).
 
 REQUIREMENTS
 ------------
@@ -75,6 +76,10 @@ One solution is using an iptables rule (Linux only) to redirect it to
 a non-privileged port:
 
 $ iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-port 15353
+
+When using --tcp, TCP needs to be redirected as well:
+
+$ iptables -t nat -A PREROUTING -p tcp --dport 53 -j REDIRECT --to-port 15353
 
 If properly configured, this will allow you to run dnsseed in userspace, using
 the -p 15353 option.
