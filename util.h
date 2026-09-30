@@ -3,11 +3,8 @@
 
 #include <pthread.h>
 #include <errno.h>
-#include <openssl/sha.h>
 #include <stdarg.h>
 
-#include "span.h"
-#include "uint256.h"
 
 #include <cstdint>
 #include <span>
@@ -67,15 +64,6 @@ public:
 
 #define SHARED_CRITICAL_BLOCK(cs)     \
     if (CCriticalBlock criticalblock = CCriticalBlock(cs, true))
-
-/** Compute the double-SHA256 hash of data. */
-inline uint256 Hash(std::span<const std::byte> data)
-{
-    uint256 hash1, hash2;
-    SHA256(UCharCast(data.data()), data.size(), hash1.begin());
-    SHA256(hash1.begin(), hash1.size(), hash2.begin());
-    return hash2;
-}
 
 void static inline Sleep(int nMilliSec) {
     struct timespec wa;

@@ -11,6 +11,7 @@
 #endif
 
 #include <algorithm>
+#include <cassert>
 #include <cctype>
 
 #define printf my_printf

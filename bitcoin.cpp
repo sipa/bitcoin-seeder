@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "db.h"
+#include "hash.h"
 #include "netbase.h"
 #include "protocol.h"
 #include "serialize.h"
