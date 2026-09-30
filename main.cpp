@@ -31,7 +31,7 @@ public:
   const char *ns;
   const char *host;
   const char *tor;
-  const char *ip_addr;
+  std::string ip_addr;
   const char *ipv4_proxy;
   const char *ipv6_proxy;
   const char *magic;
@@ -129,10 +129,7 @@ public:
 
         case 'a': {
           if (strchr(optarg, ':')==NULL) {
-            char* ip4_addr = (char*) malloc(strlen(optarg)+8);
-            strcpy(ip4_addr, "::FFFF:");
-            strcat(ip4_addr, optarg);
-            ip_addr = ip4_addr;
+            ip_addr = std::string("::FFFF:") + optarg;
           } else {
             ip_addr = optarg;
           }
@@ -338,7 +335,7 @@ public:
     dns_opt.datattl = 3600;
     dns_opt.nsttl = 40000;
     dns_opt.cb = GetIPList;
-    dns_opt.addr = opts->ip_addr;
+    dns_opt.addr = opts->ip_addr.c_str();
     dns_opt.port = opts->nPort;
     dns_opt.nRequests = 0;
     dbQueries = 0;
