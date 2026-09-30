@@ -282,8 +282,8 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   outbuf[3] = inbuf[3];
   // clear error
   outbuf[3] &= ~15;
-  // check qr
-  if (inbuf[2] & 128) return set_error(outbuf, 1); /* printf("Got response?\n"); */
+  // check qr; never reply to responses (which could cause loops between servers)
+  if (inbuf[2] & 128) return -1; /* printf("Got response?\n"); */
   // check opcode
   if (((inbuf[2] & 120) >> 3) != 0) return set_error(outbuf, 1); /* printf("Opcode nonzero?\n"); */
   // unset TC
