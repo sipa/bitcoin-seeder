@@ -361,13 +361,14 @@ extern "C" int GetIPList(void *data, char *requestedHostname, addr_t* addr, int 
     const char *digits = requestedHostname + 1;
     const char *end = digits;
     while (isxdigit((unsigned char)*end)) end++;
-    if (requestedHostname[0] != 'x' && requestedHostname[0] != 'X') return 0;
-    if (end == digits || end - digits > 16 || digits[0] == '0') return 0;
-    if (*end != '.' || strcasecmp(end + 1, thread->dns_opt.host)) return 0;
+    if (requestedHostname[0] != 'x' && requestedHostname[0] != 'X') return -1;
+    if (end == digits || end - digits > 16 || digits[0] == '0') return -1;
+    if (*end != '.' || strcasecmp(end + 1, thread->dns_opt.host)) return -1;
     uint64_t flags = strtoull(digits, NULL, 16);
-    if (!thread->filterWhitelist.count(flags)) return 0;
+    if (!thread->filterWhitelist.count(flags)) return -1;
     requestedFlags = flags;
   }
+  if (!ipv4 && !ipv6) return 0;
   thread->cacheHit(requestedFlags);
   auto& thisflag = thread->perflag[requestedFlags];
   unsigned int size = thisflag.cache.size();
