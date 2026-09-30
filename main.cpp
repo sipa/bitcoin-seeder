@@ -295,11 +295,9 @@ public:
   std::set<uint64_t> filterWhitelist;
 
   void cacheHit(uint64_t requestedFlags, bool force = false) {
-    static bool nets[NET_MAX] = {};
-    if (!nets[NET_IPV4]) {
-        nets[NET_IPV4] = true;
-        nets[NET_IPV6] = true;
-    }
+    bool nets[NET_MAX] = {};
+    nets[NET_IPV4] = true;
+    nets[NET_IPV6] = true;
     time_t now = time(NULL);
     FlagSpecificData& thisflag = perflag[requestedFlags];
     thisflag.cacheHits++;
