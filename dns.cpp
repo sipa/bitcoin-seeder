@@ -417,6 +417,10 @@ int dnsserver_init(const dns_opt_t *opt) {
     fprintf(stderr, "Unable to create DNS socket: %s\n", strerror(errno));
     return -1;
   }
+  // Accept IPv4 requests as well (as IPv4-mapped IPv6 addresses), also on
+  // systems where IPv6 sockets are IPv6-only by default (e.g. the BSDs).
+  int v6only = 0;
+  setsockopt(listenSocket, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof v6only);
   int sockopt = 1;
   setsockopt(listenSocket, IPPROTO_IPV6, DSTADDR_SOCKOPT, &sockopt, sizeof sockopt);
   if (bind(listenSocket, (struct sockaddr*)&si_me, sizeof(si_me))==-1) {
