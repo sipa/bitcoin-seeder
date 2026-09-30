@@ -2,7 +2,7 @@ CXXFLAGS = -O3 -g0
 CFLAGS = -O2 -g0
 LDFLAGS = $(CXXFLAGS)
 
-OBJS = dns.o bitcoin.o netbase.o protocol.o db.o main.o util.o bip324.o key.o random.o
+OBJS = dns.o bitcoin.o netbase.o protocol.o db.o main.o util.o bip324.o key.o random.o transport.o
 OBJS += crypto/sha256.o crypto/hmac_sha256.o crypto/hkdf_sha256_32.o
 OBJS += crypto/chacha20.o crypto/poly1305.o crypto/chacha20poly1305.o support/cleanse.o
 
