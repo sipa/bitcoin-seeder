@@ -59,7 +59,8 @@ public:
                               "--p2port <port> P2P port to connect to\n"
                               "--magic <hex>   Magic string/network prefix\n"
                               "--minheight <n> Minimum height of block chain\n"
-                              "--testnet       Use testnet\n"
+                              "--testnet       Use testnet (testnet3)\n"
+                              "--testnet4      Use testnet4\n"
                               "--wipeban       Wipe list of banned nodes\n"
                               "-?, --help      Show this text\n"
                               "\n";
@@ -84,6 +85,7 @@ public:
         {"magic", required_argument, 0, 'q'},
         {"minheight", required_argument, 0, 'x'},
         {"testnet", no_argument, 0, 'T'},
+        {"testnet4", no_argument, 0, 'U'},
         {"wipeban", no_argument, &fWipeBan, 1},
         {"help", no_argument, 0, 'H'},
         {0, 0, 0, 0}
@@ -198,8 +200,14 @@ public:
           break;
         }
 
-        case 'T': {
-          chain = ChainType::TESTNET3;
+        case 'T':
+        case 'U': {
+          ChainType selected = (c == 'T') ? ChainType::TESTNET3 : ChainType::TESTNET4;
+          if (chain != ChainType::MAIN && chain != selected) {
+            fprintf(stderr, "Cannot use both --testnet and --testnet4.\n");
+            exit(1);
+          }
+          chain = selected;
           break;
         }
 
@@ -500,6 +508,9 @@ static const string testnet_seeds[] = {"testnet-seed.bitcoin.jonasschnelli.ch",
                                        "testnet-seed.bluematt.me",
                                        "seed.testnet.achownodes.xyz",
                                        ""};
+static const string testnet4_seeds[] = {"seed.testnet4.bitcoin.sprovoost.nl",
+                                        "seed.testnet4.wiz.biz",
+                                        ""};
 static const string *seeds = mainnet_seeds;
 static vector<string> vSeeds;
 
@@ -574,6 +585,16 @@ int main(int argc, char **argv) {
       pchMessageStart[2] = 0x09;
       pchMessageStart[3] = 0x07;
       seeds = testnet_seeds;
+      break;
+    }
+
+    case ChainType::TESTNET4: {
+      printf("Using testnet4.\n");
+      pchMessageStart[0] = 0x1c;
+      pchMessageStart[1] = 0x16;
+      pchMessageStart[2] = 0x3f;
+      pchMessageStart[3] = 0x28;
+      seeds = testnet4_seeds;
       break;
     }
   }
