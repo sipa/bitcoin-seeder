@@ -13,6 +13,7 @@ Features:
   1 day and 1 week, to base decisions on.
 * very low memory (a few tens of megabytes) and cpu requirements.
 * crawlers run in parallel (by default 24 threads simultaneously).
+* the DNS server supports EDNS, and minimal responses to ANY queries.
 
 REQUIREMENTS
 ------------
