@@ -22,6 +22,7 @@ static inline int GetRequireHeight()
     switch (chainType) {
         case ChainType::MAIN: return 900000;
         case ChainType::TESTNET3: return 5000000;
+        case ChainType::TESTNET4: return 100000;
     }
     assert(false);
     return 0;
