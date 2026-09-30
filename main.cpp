@@ -484,33 +484,28 @@ extern "C" void* ThreadStats(void*) {
   return nullptr;
 }
 
-static const string mainnet_seeds[] = {"dnsseed.bluematt.me",
-                                       "seed.bitcoin.jonasschnelli.ch",
-                                       "seed.btc.petertodd.net",
-                                       "seed.bitcoin.sprovoost.nl",
-                                       "dnsseed.emzy.de",
-                                       "seed.bitcoin.wiz.biz",
-                                       "seed.mainnet.achownodes.xyz",
-                                       ""};
-static const string testnet_seeds[] = {"testnet-seed.bitcoin.jonasschnelli.ch",
-                                       "seed.tbtc.petertodd.net",
-                                       "testnet-seed.bluematt.me",
-                                       "seed.testnet.achownodes.xyz",
-                                       ""};
-static const string testnet4_seeds[] = {"seed.testnet4.bitcoin.sprovoost.nl",
-                                        "seed.testnet4.wiz.biz",
-                                        ""};
-static const string signet_seeds[] = {"seed.signet.bitcoin.sprovoost.nl",
-                                      "seed.signet.achownodes.xyz",
-                                      ""};
-static const string *seeds = mainnet_seeds;
+static const vector<string> mainnet_seeds{"dnsseed.bluematt.me",
+                                          "seed.bitcoin.jonasschnelli.ch",
+                                          "seed.btc.petertodd.net",
+                                          "seed.bitcoin.sprovoost.nl",
+                                          "dnsseed.emzy.de",
+                                          "seed.bitcoin.wiz.biz",
+                                          "seed.mainnet.achownodes.xyz"};
+static const vector<string> testnet_seeds{"testnet-seed.bitcoin.jonasschnelli.ch",
+                                          "seed.tbtc.petertodd.net",
+                                          "testnet-seed.bluematt.me",
+                                          "seed.testnet.achownodes.xyz"};
+static const vector<string> testnet4_seeds{"seed.testnet4.bitcoin.sprovoost.nl",
+                                           "seed.testnet4.wiz.biz"};
+static const vector<string> signet_seeds{"seed.signet.bitcoin.sprovoost.nl",
+                                         "seed.signet.achownodes.xyz"};
+static const vector<string> *seeds = &mainnet_seeds;
 static vector<string> vSeeds;
 
 extern "C" void* ThreadSeeder(void*) {
   vector<string> vDnsSeeds;
   for (const string& seed: vSeeds) {
-    size_t len = seed.size();
-    if (len > 6 && !seed.compare(len - 6, 6, ".onion")) {
+    if (seed.ends_with(".onion")) {
       db.Add(CService(seed.c_str(), GetDefaultPort()), true);
     } else {
       vDnsSeeds.push_back(seed);
@@ -575,7 +570,7 @@ int main(int argc, char **argv) {
       pchMessageStart[1] = 0x11;
       pchMessageStart[2] = 0x09;
       pchMessageStart[3] = 0x07;
-      seeds = testnet_seeds;
+      seeds = &testnet_seeds;
       break;
     }
 
@@ -585,7 +580,7 @@ int main(int argc, char **argv) {
       pchMessageStart[1] = 0x16;
       pchMessageStart[2] = 0x3f;
       pchMessageStart[3] = 0x28;
-      seeds = testnet4_seeds;
+      seeds = &testnet4_seeds;
       break;
     }
 
@@ -595,7 +590,7 @@ int main(int argc, char **argv) {
       pchMessageStart[1] = 0x03;
       pchMessageStart[2] = 0xcf;
       pchMessageStart[3] = 0x40;
-      seeds = signet_seeds;
+      seeds = &signet_seeds;
       break;
     }
   }
@@ -619,9 +614,7 @@ int main(int argc, char **argv) {
     printf("Overriding DNS seeds\n");
     swap(opts.vSeeds, vSeeds);
   } else {
-    for (int i=0; seeds[i][0]; i++) {
-      vSeeds.emplace_back(seeds[i]);
-    }
+    vSeeds = *seeds;
   }
   if (!opts.ns) {
     printf("No nameserver set. Not starting DNS server.\n");
