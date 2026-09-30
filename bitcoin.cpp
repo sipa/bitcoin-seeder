@@ -14,6 +14,10 @@
 
 #define BITCOIN_SEED_NONCE  0x0539a019ca550825ULL
 
+// Maximum time (in seconds) from initiating a connection until the version handshake completes
+// (that is, until verack is received).
+static const int HANDSHAKE_TIMEOUT = 30;
+
 using namespace std;
 
 class CNode {
@@ -194,11 +198,16 @@ public:
   }
   bool Run() {
     bool res = true;
+    const int64_t handshakeDeadline = time(NULL) + HANDSHAKE_TIMEOUT;
     if (!ConnectSocket(you, sock)) return false;
     PushVersion();
     Send();
     int64_t now;
     while (now = time(NULL), ban == 0 && (doneAfter == 0 || doneAfter > now) && sock != INVALID_SOCKET) {
+      if (!doneAfter && now >= handshakeDeadline) {
+        res = false;
+        break;
+      }
       char pchBuf[0x10000];
       fd_set read_set, except_set;
       FD_ZERO(&read_set);
@@ -206,13 +215,8 @@ public:
       FD_SET(sock,&read_set);
       FD_SET(sock,&except_set);
       struct timeval wa;
-      if (doneAfter) {
-        wa.tv_sec = doneAfter - now;
-        wa.tv_usec = 0;
-      } else {
-        wa.tv_sec = GetTimeout();
-        wa.tv_usec = 0;
-      }
+      wa.tv_sec = (doneAfter ? doneAfter : handshakeDeadline) - now;
+      wa.tv_usec = 0;
       int ret = select(sock+1, &read_set, NULL, &except_set, &wa);
       if (ret != 1) {
         if (!doneAfter) res = false;
