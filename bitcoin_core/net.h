@@ -9,13 +9,16 @@
 #ifndef BITCOIN_NET_H
 #define BITCOIN_NET_H
 
+#include <bip324.h>
 #include <hash.h>
+#include <key.h>
 #include <protocol.h>
 #include <streams.h>
 #include <uint256.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include <optional>
 #include <span>
 #include <string>
@@ -27,6 +30,7 @@
 inline constexpr unsigned int MAX_PROTOCOL_MESSAGE_LENGTH = 256 * 1024;
 
 enum class TransportProtocolType : uint8_t {
+    DETECTING, //!< Peer could be v1 or v2
     V1, //!< Unencrypted, plaintext protocol
     V2, //!< BIP324 protocol
 };
@@ -246,6 +250,162 @@ public:
     BytesToSend GetBytesToSend(bool have_next_message) const noexcept override;
     void MarkBytesSent(size_t bytes_sent) noexcept override;
     bool ShouldReconnectV1() const noexcept override { return false; }
+};
+
+/** V2 (BIP324) transport, for the initiator side of connections only. */
+class V2Transport final : public Transport
+{
+private:
+    /** Contents of the version packet to send. BIP324 stipulates that senders should leave this
+     *  empty, and receivers should ignore it. Future extensions can change what is sent as long as
+     *  an empty version packet contents is interpreted as no extensions supported. */
+    static constexpr std::array<std::byte, 0> VERSION_CONTENTS = {};
+
+    // The sender side and receiver side of V2Transport are state machines that are transitioned
+    // through, based on what has been received. The receive state corresponds to the contents of,
+    // and bytes received to, the receive buffer. The send state controls what can be appended to
+    // the send buffer and what can be sent from it.
+
+    /** State type that defines the current contents of the receive buffer and/or how the next
+     *  received bytes added to it will be interpreted.
+     *
+     * Diagram:
+     *
+     *                                             /---------\
+     *                                             |         |
+     *                                             v         |
+     *  start -> KEY -> GARB_GARBTERM -> VERSION -> APP -> APP_READY
+     */
+    enum class RecvState : uint8_t {
+        /** Public key.
+         *
+         * This is the initial state, during which the other side's public key is
+         * received. When that information arrives, the ciphers get initialized and the state
+         * becomes GARB_GARBTERM. */
+        KEY,
+
+        /** Garbage and garbage terminator.
+         *
+         * Whenever a byte is received, the last 16 bytes are compared with the expected garbage
+         * terminator. When that happens, the state becomes VERSION. If no matching terminator is
+         * received in 4111 bytes (4095 for the maximum garbage length, and 16 bytes for the
+         * terminator), the connection aborts. */
+        GARB_GARBTERM,
+
+        /** Version packet.
+         *
+         * A packet is received, and decrypted/verified. If that fails, the connection aborts. The
+         * first received packet in this state (whether it's a decoy or not) is expected to
+         * authenticate the garbage received during the GARB_GARBTERM state as associated
+         * authenticated data (AAD). The first non-decoy packet in this state is interpreted as
+         * version negotiation (currently, that means ignoring the contents, but it can be used for
+         * negotiating future extensions), and afterwards the state becomes APP. */
+        VERSION,
+
+        /** Application packet.
+         *
+         * A packet is received, and decrypted/verified. If that succeeds, the state becomes
+         * APP_READY and the decrypted contents is kept in m_recv_decode_buffer until it is
+         * retrieved as a message by GetMessage(). */
+        APP,
+
+        /** Nothing (an application packet is available for GetMessage()).
+         *
+         * Nothing can be received in this state. When the message is retrieved by GetMessage,
+         * the state becomes APP again. */
+        APP_READY,
+    };
+
+    /** State type that controls the sender side.
+     *
+     * Diagram:
+     *
+     *  start -> AWAITING_KEY -> READY
+     */
+    enum class SendState : uint8_t {
+        /** Waiting for the other side's public key.
+         *
+         * This is the initial state. The public key and garbage is sent out. When
+         * the receiver receives the other side's public key and transitions to GARB_GARBTERM, the
+         * sender state becomes READY. */
+        AWAITING_KEY,
+
+        /** Normal sending state.
+         *
+         * In this state, the ciphers are initialized, so packets can be sent. When this state is
+         * entered, the garbage terminator and version packet are appended to the send buffer (in
+         * addition to the key and garbage which may still be there). In this state a message can be
+         * provided if the send buffer is empty. */
+        READY,
+    };
+
+    /** Cipher state. */
+    BIP324Cipher m_cipher;
+
+    /** In {VERSION, APP}, the decrypted packet length, if m_recv_buffer.size() >=
+     *  BIP324Cipher::LENGTH_LEN. Unspecified otherwise. */
+    uint32_t m_recv_len {0};
+    /** Receive buffer; meaning is determined by m_recv_state. */
+    std::vector<uint8_t> m_recv_buffer;
+    /** AAD expected in next received packet (currently used only for garbage). */
+    std::vector<uint8_t> m_recv_aad;
+    /** Buffer to put decrypted contents in, for converting to CNetMessage. */
+    std::vector<uint8_t> m_recv_decode_buffer;
+    /** Current receiver state. */
+    RecvState m_recv_state;
+
+    /** The send buffer; meaning is determined by m_send_state. */
+    std::vector<uint8_t> m_send_buffer;
+    /** How many bytes from the send buffer have been sent so far. */
+    uint32_t m_send_pos {0};
+    /** The garbage sent, or to be sent (AWAITING_KEY state only). */
+    std::vector<uint8_t> m_send_garbage;
+    /** Type of the message being sent. */
+    std::string m_send_type;
+    /** Current sender state. */
+    SendState m_send_state;
+    /** Whether we've sent at least 24 bytes (which would trigger disconnect for V1 peers). */
+    bool m_sent_v1_header_worth {false};
+
+    /** Change the receive state. */
+    void SetReceiveState(RecvState recv_state) noexcept;
+    /** Change the send state. */
+    void SetSendState(SendState send_state) noexcept;
+    /** Given a packet's contents, find the message type (if valid), and strip it from contents. */
+    static std::optional<std::string> GetMessageType(std::span<const uint8_t>& contents) noexcept;
+    /** Determine how many received bytes can be processed in one go. */
+    size_t GetMaxBytesToProcess() noexcept;
+    /** Put our public key + garbage in the send buffer. */
+    void StartSendingHandshake() noexcept;
+    /** Process bytes in m_recv_buffer, while in KEY state. */
+    bool ProcessReceivedKeyBytes() noexcept;
+    /** Process bytes in m_recv_buffer, while in GARB_GARBTERM state. */
+    bool ProcessReceivedGarbageBytes() noexcept;
+    /** Process bytes in m_recv_buffer, while in VERSION/APP state. */
+    bool ProcessReceivedPacketBytes() noexcept;
+
+public:
+    static constexpr uint32_t MAX_GARBAGE_LEN = 4095;
+
+    /** Construct a V2 transport with securely generated random keys. */
+    V2Transport() noexcept;
+
+    /** Construct a V2 transport with specified keys and garbage (test use only). */
+    V2Transport(const CKey& key, std::span<const std::byte> ent32, std::vector<uint8_t> garbage) noexcept;
+
+    // Receive side functions.
+    bool ReceivedMessageComplete() const noexcept override;
+    bool ReceivedBytes(std::span<const uint8_t>& msg_bytes) noexcept override;
+    CNetMessage GetReceivedMessage(bool& reject_message) noexcept override;
+
+    // Send side functions.
+    bool SetMessageToSend(CSerializedNetMsg& msg) noexcept override;
+    BytesToSend GetBytesToSend(bool have_next_message) const noexcept override;
+    void MarkBytesSent(size_t bytes_sent) noexcept override;
+
+    // Miscellaneous functions.
+    bool ShouldReconnectV1() const noexcept override;
+    Info GetInfo() const noexcept override;
 };
 
 #endif // BITCOIN_NET_H
