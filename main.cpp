@@ -416,17 +416,20 @@ extern "C" int GetIPList(void *data, char *requestedHostname, addr_t* addr, int 
   CDnsThread *thread = (CDnsThread*)data;
 
   uint64_t requestedFlags = 0;
-  int hostlen = strlen(requestedHostname);
-  if (hostlen > 1 && (requestedHostname[0] == 'x' || requestedHostname[0] == 'X') && requestedHostname[1] != '0') {
-    char *pEnd;
-    uint64_t flags = (uint64_t)strtoull(requestedHostname+1, &pEnd, 16);
-    if (*pEnd == '.' && pEnd <= requestedHostname+17 && std::find(thread->filterWhitelist.begin(), thread->filterWhitelist.end(), flags) != thread->filterWhitelist.end())
-      requestedFlags = flags;
-    else
-      return 0;
+  if (strcasecmp(requestedHostname, thread->dns_opt.host)) {
+    // Not the zone apex, so the name must be x<flags>.<host>, where <flags> is
+    // a whitelisted combination of service flags, in hexadecimal without
+    // leading zeroes.
+    const char *digits = requestedHostname + 1;
+    const char *end = digits;
+    while (isxdigit((unsigned char)*end)) end++;
+    if (requestedHostname[0] != 'x' && requestedHostname[0] != 'X') return 0;
+    if (end == digits || end - digits > 16 || digits[0] == '0') return 0;
+    if (*end != '.' || strcasecmp(end + 1, thread->dns_opt.host)) return 0;
+    uint64_t flags = strtoull(digits, NULL, 16);
+    if (!thread->filterWhitelist.count(flags)) return 0;
+    requestedFlags = flags;
   }
-  else if (strcasecmp(requestedHostname, thread->dns_opt.host))
-    return 0;
   thread->cacheHit(requestedFlags);
   auto& thisflag = thread->perflag[requestedFlags];
   unsigned int size = thisflag.cache.size();
