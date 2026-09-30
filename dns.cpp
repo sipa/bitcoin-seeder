@@ -277,19 +277,15 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   // copy id
   outbuf[0] = inbuf[0];
   outbuf[1] = inbuf[1];
-  // copy flags;
-  outbuf[2] = inbuf[2];
-  outbuf[3] = inbuf[3];
-  // clear error
-  outbuf[3] &= ~15;
+  // set QR, and copy opcode and RD from the request; all other flags (AA, TC,
+  // RA, Z, AD, CD) and the rcode start out as zero (as DNSSEC is not
+  // supported, AD and CD must not be set either)
+  outbuf[2] = 0x80 | (inbuf[2] & 0x79);
+  outbuf[3] = 0;
   // check qr; never reply to responses (which could cause loops between servers)
   if (inbuf[2] & 128) return -1; /* printf("Got response?\n"); */
   // check opcode
   if (((inbuf[2] & 120) >> 3) != 0) return set_error(outbuf, 1); /* printf("Opcode nonzero?\n"); */
-  // unset TC
-  outbuf[2] &= ~2;
-  // unset RA
-  outbuf[3] &= ~128;
   // check questions
   int nquestion = (inbuf[4] << 8) + inbuf[5];
   if (nquestion == 0) return set_error(outbuf, 0); /* printf("No questions?\n"); */
@@ -311,8 +307,6 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   outbuf[6] = 0;  outbuf[7] = 0;
   outbuf[8] = 0;  outbuf[9] = 0;
   outbuf[10] = 0; outbuf[11] = 0;
-  // set qr
-  outbuf[2] |= 128;
   
   int typ = (inpos[0] << 8) + inpos[1];
   int cls = (inpos[2] << 8) + inpos[3];
