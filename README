@@ -14,7 +14,7 @@ Features:
   1 day, 1 week and 1 month, to base decisions on.
 * very low memory (a few tens of megabytes) and cpu requirements.
 * crawlers run in parallel (by default 96 threads simultaneously).
-* supports mainnet, testnet3, and other bitcoin-like networks.
+* supports mainnet, testnet3, testnet4, and other bitcoin-like networks.
 
 REQUIREMENTS
 ------------
@@ -45,7 +45,8 @@ Run ./dnsseed --help for a list of all options.
 OTHER NETWORKS
 --------------
 
-By default, dnsseed crawls Bitcoin mainnet. Use --testnet for testnet3.
+By default, dnsseed crawls Bitcoin mainnet. Use --testnet for testnet3,
+or --testnet4 for testnet4.
 
 To crawl another network, or to override the defaults, use:
 * --magic <hex>: the network magic bytes (e.g. 0b110907 for testnet3).
