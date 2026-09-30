@@ -1,16 +1,17 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstring>
+#include <deque>
+#include <memory>
 #include <span>
 #include <vector>
 
 #include "db.h"
-#include "hash.h"
 #include "netbase.h"
 #include "protocol.h"
 #include "serialize.h"
 #include "streams.h"
-#include "uint256.h"
+#include "transport.h"
 #include "util.h"
 
 #define BITCOIN_SEED_NONCE  0x0539a019ca550825ULL
@@ -26,8 +27,8 @@ using namespace std;
 
 class CNode {
   SOCKET sock;
-  vector<std::byte> vSend;
-  vector<std::byte> vRecv;
+  std::unique_ptr<Transport> m_transport;
+  std::deque<CSerializedNetMsg> m_send_queue;
   int nVersion;
   string strSubVer;
   int nStartingHeight;
@@ -47,26 +48,27 @@ class CNode {
 
   template<typename... Args>
   void PushMessage(const char *pszCommand, const Args&... args) {
-    DataStream payload;
-    (payload << ... << args);
-    CMessageHeader hdr(pszCommand, payload.size());
-    uint256 hash = Hash(std::span{payload.data(), payload.size()});
-    memcpy(hdr.pchChecksum, hash.begin(), CMessageHeader::CHECKSUM_SIZE);
-    DataStream header;
-    header << hdr;
-    vSend.insert(vSend.end(), header.begin(), header.end());
-    vSend.insert(vSend.end(), payload.begin(), payload.end());
+    CSerializedNetMsg msg;
+    msg.m_type = pszCommand;
+    VectorWriter{msg.data, 0, args...};
+    m_send_queue.push_back(std::move(msg));
   }
 
   void Send() {
-    if (sock == INVALID_SOCKET) return;
-    if (vSend.empty()) return;
-    int nBytes = send(sock, vSend.data(), vSend.size(), 0);
-    if (nBytes > 0) {
-      vSend.erase(vSend.begin(), vSend.begin() + nBytes);
-    } else {
-      close(sock);
-      sock = INVALID_SOCKET;
+    while (sock != INVALID_SOCKET) {
+      // Hand the next queued message to the transport, if it can accept one now.
+      if (!m_send_queue.empty() && m_transport->SetMessageToSend(m_send_queue.front())) {
+        m_send_queue.pop_front();
+      }
+      const auto& [to_send, more, msg_type] = m_transport->GetBytesToSend(!m_send_queue.empty());
+      if (to_send.empty()) break;
+      int nBytes = send(sock, to_send.data(), to_send.size(), 0);
+      if (nBytes <= 0) {
+        close(sock);
+        sock = INVALID_SOCKET;
+        break;
+      }
+      m_transport->MarkBytesSent(nBytes);
     }
   }
   
@@ -155,50 +157,31 @@ class CNode {
     return false;
   }
   
-  bool ProcessMessages() {
-    if (vRecv.empty()) return false;
-    const auto magic = std::as_bytes(std::span{pchMessageStart});
-    const size_t nHeaderSize = CMessageHeader::HEADER_SIZE;
-    do {
-      auto pstart = search(vRecv.begin(), vRecv.end(), magic.begin(), magic.end());
-      if (size_t(vRecv.end() - pstart) < nHeaderSize) {
-        if (vRecv.size() > nHeaderSize) {
-          vRecv.erase(vRecv.begin(), vRecv.end() - nHeaderSize);
-        }
-        break;
-      }
-      vRecv.erase(vRecv.begin(), pstart);
-      CMessageHeader hdr;
-      DataStream{std::span<const std::byte>{vRecv}.first(nHeaderSize)} >> hdr;
-      if (!hdr.IsValid()) { 
-        ban = 100000; return true;
-      }
-      string strCommand = hdr.GetCommand();
-      unsigned int nMessageSize = hdr.nMessageSize;
-      if (nMessageSize > MAX_SIZE) { 
+  // Process bytes received from the peer. Returns true if no further processing should happen.
+  bool ProcessBytes(std::span<const uint8_t> bytes) {
+    while (!bytes.empty()) {
+      if (!m_transport->ReceivedBytes(bytes)) {
         ban = 100000;
-        return true; 
-      }
-      if (nHeaderSize + nMessageSize > vRecv.size()) {
-        break;
-      }
-      auto payload = std::span<const std::byte>{vRecv}.subspan(nHeaderSize, nMessageSize);
-      uint256 hash = Hash(payload);
-      if (memcmp(hash.begin(), hdr.pchChecksum, CMessageHeader::CHECKSUM_SIZE) != 0) {
-        close(sock);
-        sock = INVALID_SOCKET;
         return true;
       }
-      DataStream vMsg{payload};
-      vRecv.erase(vRecv.begin(), vRecv.begin() + nHeaderSize + nMessageSize);
-      if (ProcessMessage(strCommand, vMsg))
-        return true;
-    } while(1);
+      if (m_transport->ReceivedMessageComplete()) {
+        bool reject_message{false};
+        CNetMessage msg = m_transport->GetReceivedMessage(reject_message);
+        if (reject_message) {
+          close(sock);
+          sock = INVALID_SOCKET;
+          return true;
+        }
+        if (ProcessMessage(msg.m_type, msg.m_recv))
+          return true;
+      }
+    }
     return false;
   }
   
 public:
   CNode(const CService& ip, vector<CAddress>* vAddrIn) : you(ip), vAddr(vAddrIn), ban(0), doneAfter(0), nVersion(0), nStartingHeight(0) {
+    m_transport = std::make_unique<V1Transport>();
     fGotVersion = false;
     fGotVerAck = false;
   }
@@ -236,10 +219,8 @@ public:
         break;
       }
       int nBytes = recv(sock, pchBuf, sizeof(pchBuf), 0);
-      int nPos = vRecv.size();
       if (nBytes > 0) {
-        vRecv.resize(nPos + nBytes);
-        memcpy(&vRecv[nPos], pchBuf, nBytes);
+        ProcessBytes(std::span{reinterpret_cast<const uint8_t*>(pchBuf), size_t(nBytes)});
       } else if (nBytes == 0) {
         res = false;
         break;
@@ -247,7 +228,6 @@ public:
         res = false;
         break;
       }
-      ProcessMessages();
       Send();
     }
     if (sock == INVALID_SOCKET) res = false;
