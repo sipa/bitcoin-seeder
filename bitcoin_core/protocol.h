@@ -25,6 +25,7 @@ enum class ChainType
     MAIN,
     TESTNET3,
     TESTNET4,
+    SIGNET,
 };
 
 extern ChainType chainType;
@@ -36,6 +37,7 @@ static inline unsigned short GetDefaultPort()
         case ChainType::MAIN: return 8333;
         case ChainType::TESTNET3: return 18333;
         case ChainType::TESTNET4: return 48333;
+        case ChainType::SIGNET: return 38333;
     }
     assert(false);
     return 0;

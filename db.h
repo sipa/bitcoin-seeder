@@ -23,6 +23,7 @@ static inline int GetRequireHeight()
         case ChainType::MAIN: return 900000;
         case ChainType::TESTNET3: return 5000000;
         case ChainType::TESTNET4: return 100000;
+        case ChainType::SIGNET: return 300000;
     }
     assert(false);
     return 0;

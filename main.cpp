@@ -89,6 +89,7 @@ public:
                               "--knownblock <hash> Hash of a block that good nodes must have\n"
                               "--testnet       Use testnet (testnet3)\n"
                               "--testnet4      Use testnet4\n"
+                              "--signet        Use signet (the default one)\n"
                               "--wipeban       Wipe list of banned nodes\n"
                               "--wipeignore    Wipe list of ignored nodes\n"
                               "--nodns         Don't run the built-in DNS server\n"
@@ -121,6 +122,7 @@ public:
         {"knownblock", required_argument, 0, 'K'},
         {"testnet", no_argument, 0, 'T'},
         {"testnet4", no_argument, 0, 'U'},
+        {"signet", no_argument, 0, 'S'},
         {"wipeban", no_argument, &fWipeBan, 1},
         {"wipeignore", no_argument, &fWipeBan, 1},
         {"nodns", no_argument, &fNoDNS, 1},
@@ -249,10 +251,11 @@ public:
         }
 
         case 'T':
-        case 'U': {
-          ChainType selected = (c == 'T') ? ChainType::TESTNET3 : ChainType::TESTNET4;
+        case 'U':
+        case 'S': {
+          ChainType selected = (c == 'T') ? ChainType::TESTNET3 : (c == 'U') ? ChainType::TESTNET4 : ChainType::SIGNET;
           if (chain != ChainType::MAIN && chain != selected) {
-            fprintf(stderr, "Cannot use both --testnet and --testnet4.\n");
+            fprintf(stderr, "Only one of --testnet, --testnet4, and --signet can be used.\n");
             exit(1);
           }
           chain = selected;
@@ -575,12 +578,16 @@ static const string testnet_seeds[] = {"testnet-seed.bitcoin.jonasschnelli.ch",
 static const string testnet4_seeds[] = {"seed.testnet4.bitcoin.sprovoost.nl",
                                         "seed.testnet4.wiz.biz",
                                         ""};
+static const string signet_seeds[] = {"seed.signet.bitcoin.sprovoost.nl",
+                                      "seed.signet.achownodes.xyz",
+                                      ""};
 static const string *seeds = mainnet_seeds;
 
 // Blocks that good nodes must have in their active chain (from Bitcoin Core's assumeutxo data).
 static constexpr uint256 mainnet_known_block{"000000000000000000010b17283c3c400507969a9c2afd1dcf2082ec5cca2880"}; // height 880000
 static constexpr uint256 testnet_known_block{"00000000000000f4971a7fb37fbdff89315b69a2e1920c467654a382f0d64786"}; // height 4840000
 static constexpr uint256 testnet4_known_block{"0000000002ebe8bcda020e0dd6ccfbdfac531d2f6a81457191b99fc2df2dbe3b"}; // height 90000
+static constexpr uint256 signet_known_block{"0000000577f2741bb30cd9d39d6d71b023afbeb9764f6260786a97969d5c9ac0"}; // height 290000
 static vector<string> vSeeds;
 
 /** Configuration for the zone file export thread. */
@@ -870,6 +877,16 @@ int main(int argc, char **argv) {
       seeds = testnet4_seeds;
       break;
     }
+
+    case ChainType::SIGNET: {
+      printf("Using signet.\n");
+      pchMessageStart[0] = 0x0a;
+      pchMessageStart[1] = 0x03;
+      pchMessageStart[2] = 0xcf;
+      pchMessageStart[3] = 0x40;
+      seeds = signet_seeds;
+      break;
+    }
   }
   if (opts.nP2Port) {
     printf("Using P2P port %i\n", opts.nP2Port);
@@ -896,6 +913,7 @@ int main(int argc, char **argv) {
       case ChainType::MAIN: hashKnownBlock = mainnet_known_block; break;
       case ChainType::TESTNET3: hashKnownBlock = testnet_known_block; break;
       case ChainType::TESTNET4: hashKnownBlock = testnet4_known_block; break;
+      case ChainType::SIGNET: hashKnownBlock = signet_known_block; break;
     }
   }
   if (!opts.vSeeds.empty()) {
