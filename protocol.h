@@ -15,11 +15,23 @@
 #include <string>
 #include "uint256.h"
 
-extern bool fTestNet;
-extern unsigned short nDefaultP2Port;
-static inline unsigned short GetDefaultPort(const bool testnet = fTestNet)
+enum class ChainType
 {
-    return nDefaultP2Port ? nDefaultP2Port : (testnet ? 18333 : 8333);
+    MAIN,
+    TESTNET3,
+};
+
+extern ChainType chainType;
+extern unsigned short nDefaultP2Port;
+static inline unsigned short GetDefaultPort()
+{
+    if (nDefaultP2Port) return nDefaultP2Port;
+    switch (chainType) {
+        case ChainType::MAIN: return 8333;
+        case ChainType::TESTNET3: return 18333;
+    }
+    assert(false);
+    return 0;
 }
 
 //
