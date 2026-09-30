@@ -191,7 +191,12 @@ class CNode {
         uint256 hash = Hash(vRecv.begin(), vRecv.begin() + nMessageSize);
         unsigned int nChecksum = 0;
         memcpy(&nChecksum, &hash, sizeof(nChecksum));
-        if (nChecksum != hdr.nChecksum) continue;
+        if (nChecksum != hdr.nChecksum) {
+          // printf("%s: BAD (checksum mismatch)\n", ToString(you).c_str());
+          close(sock);
+          sock = INVALID_SOCKET;
+          return true;
+        }
       }
       CDataStream vMsg(vRecv.begin(), vRecv.begin() + nMessageSize, vRecv.nType, vRecv.nVersion);
       vRecv.ignore(nMessageSize);
