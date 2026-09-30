@@ -157,8 +157,9 @@ class CNode {
       auto payload = std::span<const std::byte>{vRecv}.subspan(nHeaderSize, nMessageSize);
       uint256 hash = Hash(payload);
       if (memcmp(hash.begin(), hdr.pchChecksum, CMessageHeader::CHECKSUM_SIZE) != 0) {
-        vRecv.erase(vRecv.begin(), vRecv.begin() + nHeaderSize);
-        continue;
+        close(sock);
+        sock = INVALID_SOCKET;
+        return true;
       }
       DataStream vMsg{payload};
       vRecv.erase(vRecv.begin(), vRecv.begin() + nHeaderSize + nMessageSize);
