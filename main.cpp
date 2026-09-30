@@ -65,6 +65,7 @@ public:
                               "-?, --help      Show this text\n"
                               "\n";
     bool showHelp = false;
+    bool fError = false;
 
     while(1) {
       static struct option long_options[] = {
@@ -86,7 +87,7 @@ public:
         {"testnet", no_argument, &fUseTestNet, 1},
         {"wipeban", no_argument, &fWipeBan, 1},
         {"wipeignore", no_argument, &fWipeBan, 1},
-        {"help", no_argument, 0, 'h'},
+        {"help", no_argument, 0, 'H'},
         {0, 0, 0, 0}
       };
       int option_index = 0;
@@ -195,8 +196,15 @@ public:
           break;
         }
 
-        case '?': {
+        case 'H': {
           showHelp = true;
+          break;
+        }
+
+        case '?': {
+          // Either an explicit -?, or an unknown option / missing argument.
+          showHelp = true;
+          if (optopt != '?') fError = true;
           break;
         }
       }
@@ -217,8 +225,14 @@ public:
         filter_whitelist.insert(NODE_NETWORK_LIMITED | NODE_WITNESS | NODE_P2P_V2 | NODE_COMPACT_FILTERS); // xc48
         filter_whitelist.insert(NODE_NETWORK_LIMITED | NODE_WITNESS | NODE_BLOOM); // x40c
     }
-    if (host != NULL && ns == NULL) showHelp = true;
-    if (showHelp) fprintf(stderr, help, argv[0]);
+    if (host != NULL && ns == NULL) {
+      showHelp = true;
+      fError = true;
+    }
+    if (showHelp) {
+      fprintf(stderr, help, argv[0]);
+      exit(fError ? 1 : 0);
+    }
   }
 };
 
