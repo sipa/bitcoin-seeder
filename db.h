@@ -70,7 +70,6 @@ private:
   int64 lastTry;
   int64 ourLastTry;
   int64 ourLastSuccess;
-  int64 ignoreTill;
   CAddrStat stat2H;
   CAddrStat stat8H;
   CAddrStat stat1D;
@@ -82,7 +81,7 @@ private:
   int success;
   std::string clientSubVersion;
 public:
-  CAddrInfo() : services(0), lastTry(0), ourLastTry(0), ourLastSuccess(0), ignoreTill(0), clientVersion(0), blocks(0), total(0), success(0) {}
+  CAddrInfo() : services(0), lastTry(0), ourLastTry(0), ourLastSuccess(0), clientVersion(0), blocks(0), total(0), success(0) {}
   
   CAddrReport GetReport() const {
     CAddrReport ret;
@@ -126,14 +125,6 @@ public:
     if (stat1D.reliability - stat1D.weight + 1.0 < 0.05 && stat1D.count > 8) { return 1*86400; }
     return 0;
   }
-  int GetIgnoreTime() const {
-    if (IsGood()) return 0;
-    if (stat1M.reliability - stat1M.weight + 1.0 < 0.20 && stat1M.count > 2) { return 10*86400; }
-    if (stat1W.reliability - stat1W.weight + 1.0 < 0.16 && stat1W.count > 2)  { return 3*86400; }
-    if (stat1D.reliability - stat1D.weight + 1.0 < 0.12 && stat1D.count > 2)  { return 8*3600; }
-    if (stat8H.reliability - stat8H.weight + 1.0 < 0.08 && stat8H.count > 2)  { return 2*3600; }
-    return 0;
-  }
   
   void Update(bool good);
   
@@ -149,6 +140,7 @@ public:
     READWRITE(tried);
     if (tried) {
       READWRITE(ourLastTry);
+      int64 ignoreTill = 0; // no longer used
       READWRITE(ignoreTill);
       READWRITE(stat2H);
       READWRITE(stat8H);
@@ -241,12 +233,6 @@ public:
     }
   }
 
-  void ResetIgnores() {
-      for (std::map<int, CAddrInfo>::iterator it = idToInfo.begin(); it != idToInfo.end(); it++) {
-           (*it).second.ignoreTill = 0;
-      }
-  }
-  
   std::vector<CAddrReport> GetAll() {
     std::vector<CAddrReport> ret;
     SHARED_CRITICAL_BLOCK(cs) {
