@@ -23,39 +23,28 @@ void CAddrInfo::Update(bool good) {
   stat1D.Update(good, age, 3600*24);
   stat1W.Update(good, age, 3600*24*7);
   stat1M.Update(good, age, 3600*24*30);
-  int ign = GetIgnoreTime();
-  if (ign && (ignoreTill==0 || ignoreTill < ign+now)) ignoreTill = ign+now;
 }
 
 bool CAddrDb::Get_(CServiceResult &ip, int &wait) {
   int64_t now = time(NULL);
-  int cont = 0;
   int tot = unkId.size() + ourId.size();
   if (tot == 0) {
     wait = 5;
     return false;
   }
-  do {
-    int rnd = rand() % tot;
-    int ret;
-    if (rnd < unkId.size()) {
-      set<int>::iterator it = unkId.end(); it--;
-      ret = *it;
-      unkId.erase(it);
-    } else {
-      ret = ourId.front();
-      if (time(NULL) - idToInfo[ret].ourLastTry < MIN_RETRY) return false;
-      ourId.pop_front();
-    }
-    if (idToInfo[ret].ignoreTill && idToInfo[ret].ignoreTill < now) {
-      ourId.push_back(ret);
-      idToInfo[ret].ourLastTry = now;
-    } else {
-      ip.service = idToInfo[ret].ip;
-      ip.ourLastSuccess = idToInfo[ret].ourLastSuccess;
-      break;
-    }
-  } while(1);
+  int rnd = rand() % tot;
+  int ret;
+  if (rnd < unkId.size()) {
+    set<int>::iterator it = unkId.end(); it--;
+    ret = *it;
+    unkId.erase(it);
+  } else {
+    ret = ourId.front();
+    if (now - idToInfo[ret].ourLastTry < MIN_RETRY) return false;
+    ourId.pop_front();
+  }
+  ip.service = idToInfo[ret].ip;
+  ip.ourLastSuccess = idToInfo[ret].ourLastSuccess;
   nDirty++;
   return true;
 }
@@ -135,9 +124,6 @@ void CAddrDb::Add_(const CAddress &addr, bool force) {
     CAddrInfo &ai = idToInfo[ipToId[ipp]];
     if (addr.nTime > ai.lastTry) ai.lastTry = addr.nTime;
     // Do not update ai.nServices (data from VERSION from the peer itself is better than random ADDR rumours).
-    if (force) {
-      ai.ignoreTill = 0;
-    }
     return;
   }
   CAddrInfo ai;
