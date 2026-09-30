@@ -55,7 +55,7 @@ typedef enum {
 
 
 //  0: ok
-// -1: premature end of input, compression pointer, component > 63 char, invalid character
+// -1: premature end of input, compression pointer, component > 63 char
 // -2: insufficient space in output
 int static parse_name(const unsigned char **inpos, const unsigned char *inend, char *buf, size_t bufsize) {
   size_t bufused = 0;
@@ -86,8 +86,11 @@ int static parse_name(const unsigned char **inpos, const unsigned char *inend, c
       if (bufused == bufsize-1)
         return -2;
       int c = *((*inpos)++);
-      if (c == '.')
-        return -1;
+      // Dots and NUL bytes are valid inside labels, but would be confused with
+      // label separators and string terminators. Replace them with a byte
+      // that cannot occur in any name we serve.
+      if (c == '.' || c == 0)
+        c = 0x01;
       octet--;
       buf[bufused++] = c;
     }
