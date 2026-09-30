@@ -255,19 +255,20 @@ int static write_record_soa(unsigned char** outpos, const unsigned char *outend,
   return error;
 }
 
-static ssize_t set_error(unsigned char* outbuf, int error) {
+// Turn the response in outbuf into an error response with the given rcode.
+// Its first len bytes (the header, and the question if present) are kept,
+// and the answer, authority and additional sections are left empty.
+static ssize_t set_error(unsigned char* outbuf, int error, ssize_t len) {
   // set error
   outbuf[3] |= error & 0xF;
   // set counts
-  outbuf[4] = 0;  outbuf[5] = 0;
   outbuf[6] = 0;  outbuf[7] = 0;
   outbuf[8] = 0;  outbuf[9] = 0;
   outbuf[10] = 0; outbuf[11] = 0;
-  return 12;
+  return len;
 }
 
 ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insize, unsigned char* outbuf) {
-  int error = 0;
   if (insize < 12) // DNS header
     return -1;
   // copy id
@@ -278,32 +279,31 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   // supported, AD and CD must not be set either)
   outbuf[2] = 0x80 | (inbuf[2] & 0x79);
   outbuf[3] = 0;
+  // set counts (the question is only included once it has been parsed)
+  outbuf[4] = 0;  outbuf[5] = 0;
+  outbuf[6] = 0;  outbuf[7] = 0;
+  outbuf[8] = 0;  outbuf[9] = 0;
+  outbuf[10] = 0; outbuf[11] = 0;
   // check qr; never reply to responses (which could cause loops between servers)
   if (inbuf[2] & 128) return -1; /* printf("Got response?\n"); */
   // check opcode; only QUERY (0) is implemented
-  if (((inbuf[2] & 120) >> 3) != 0) return set_error(outbuf, 4); /* printf("Opcode nonzero?\n"); */
+  if (((inbuf[2] & 120) >> 3) != 0) return set_error(outbuf, 4, 12); /* printf("Opcode nonzero?\n"); */
   // check questions
   int nquestion = (inbuf[4] << 8) + inbuf[5];
-  if (nquestion == 0) return set_error(outbuf, 0); /* printf("No questions?\n"); */
+  if (nquestion == 0) return set_error(outbuf, 0, 12); /* printf("No questions?\n"); */
   // multiple questions are invalid (RFC 9619)
-  if (nquestion > 1) return set_error(outbuf, 1); /* printf("Multiple questions %i?\n", nquestion); */
+  if (nquestion > 1) return set_error(outbuf, 1, 12); /* printf("Multiple questions %i?\n", nquestion); */
   const unsigned char *inpos = inbuf + 12;
   const unsigned char *inend = inbuf + insize;
   char name[256];
   int offset = inpos - inbuf;
   int ret = parse_name(&inpos, inend, name, 256);
-  if (ret == -1) return set_error(outbuf, 1);
-  if (ret == -2) return set_error(outbuf, 5);
-  int namel = strlen(name), hostl = strlen(opt->host);
-  if (strcasecmp(name, opt->host) && (namel<hostl+2 || name[namel-hostl-1]!='.' || strcasecmp(name+namel-hostl,opt->host))) return set_error(outbuf, 5);
-  if (inend - inpos < 4) return set_error(outbuf, 1);
+  if (ret == -1) return set_error(outbuf, 1, 12);
+  if (ret == -2) return set_error(outbuf, 5, 12);
+  if (inend - inpos < 4) return set_error(outbuf, 1, 12);
   // copy question to output
   memcpy(outbuf+12, inbuf+12, inpos+4 - (inbuf+12));
-  // set counts
-  outbuf[4] = 0;  outbuf[5] = 1;
-  outbuf[6] = 0;  outbuf[7] = 0;
-  outbuf[8] = 0;  outbuf[9] = 0;
-  outbuf[10] = 0; outbuf[11] = 0;
+  outbuf[5] = 1;
   
   int typ = (inpos[0] << 8) + inpos[1];
   int cls = (inpos[2] << 8) + inpos[3];
@@ -311,6 +311,10 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   
   unsigned char *outpos = outbuf+(inpos-inbuf);
   unsigned char *outend = outbuf + BUFLEN;
+
+  // refuse names outside our zone
+  int namel = strlen(name), hostl = strlen(opt->host);
+  if (strcasecmp(name, opt->host) && (namel<hostl+2 || name[namel-hostl-1]!='.' || strcasecmp(name+namel-hostl,opt->host))) return set_error(outbuf, 5, outpos - outbuf);
   
 //   printf("DNS: Request host='%s' type=%i class=%i\n", name, typ, cls);
   
