@@ -194,7 +194,7 @@ class CNode {
   }
   
 public:
-  CNode(const CService& ip, vector<CAddress>* vAddrIn) : you(ip), nHeaderStart(-1), nMessageStart(-1), vAddr(vAddrIn), ban(0), doneAfter(0), nVersion(0) {
+  CNode(const CService& ip, vector<CAddress>* vAddrIn) : you(ip), nHeaderStart(-1), nMessageStart(-1), vAddr(vAddrIn), ban(0), doneAfter(0), nVersion(0), nStartingHeight(0) {
     vSend.SetType(SER_NETWORK);
     vSend.SetVersion(0);
     vRecv.SetType(SER_NETWORK);
