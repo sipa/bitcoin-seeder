@@ -284,12 +284,13 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   outbuf[3] = 0;
   // check qr; never reply to responses (which could cause loops between servers)
   if (inbuf[2] & 128) return -1; /* printf("Got response?\n"); */
-  // check opcode
-  if (((inbuf[2] & 120) >> 3) != 0) return set_error(outbuf, 1); /* printf("Opcode nonzero?\n"); */
+  // check opcode; only QUERY (0) is implemented
+  if (((inbuf[2] & 120) >> 3) != 0) return set_error(outbuf, 4); /* printf("Opcode nonzero?\n"); */
   // check questions
   int nquestion = (inbuf[4] << 8) + inbuf[5];
   if (nquestion == 0) return set_error(outbuf, 0); /* printf("No questions?\n"); */
-  if (nquestion > 1) return set_error(outbuf, 4); /* printf("Multiple questions %i?\n", nquestion); */
+  // multiple questions are invalid (RFC 9619)
+  if (nquestion > 1) return set_error(outbuf, 1); /* printf("Multiple questions %i?\n", nquestion); */
   const unsigned char *inpos = inbuf + 12;
   const unsigned char *inend = inbuf + insize;
   char name[256];
