@@ -26,6 +26,7 @@ public:
   int nDnsThreads;
   ChainType chain;
   int fWipeBan;
+  int fTCP;
   const char *mbox;
   const char *ns;
   const char *host;
@@ -37,7 +38,7 @@ public:
   std::vector<string> vSeeds;
   std::set<uint64_t> filter_whitelist;
 
-  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), nP2Port(0), nMinimumHeight(0), mbox(NULL), ns(NULL), host(NULL), tor(NULL), chain(ChainType::MAIN), fWipeBan(false), ipv4_proxy(NULL), ipv6_proxy(NULL), magic(NULL) {}
+  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), nP2Port(0), nMinimumHeight(0), mbox(NULL), ns(NULL), host(NULL), tor(NULL), chain(ChainType::MAIN), fWipeBan(false), fTCP(false), ipv4_proxy(NULL), ipv6_proxy(NULL), magic(NULL) {}
 
   void ParseCommandLine(int argc, char **argv) {
     static const char *help = "Bitcoin-seeder\n"
@@ -52,6 +53,7 @@ public:
                               "-d <threads>    Number of DNS server threads (default 4)\n"
                               "-a <address>    Address to listen on (default ::)\n"
                               "-p <port>       UDP port to listen on (default 53)\n"
+                              "--tcp           Also serve DNS requests over TCP (on the same port)\n"
                               "-o <ip:port>    Tor proxy IP/Port\n"
                               "-i <ip:port>    IPV4 SOCKS5 proxy IP/Port\n"
                               "-k <ip:port>    IPV6 SOCKS5 proxy IP/Port\n"
@@ -89,6 +91,7 @@ public:
         {"testnet4", no_argument, 0, 'U'},
         {"signet", no_argument, 0, 'S'},
         {"wipeban", no_argument, &fWipeBan, 1},
+        {"tcp", no_argument, &fTCP, 1},
         {"help", no_argument, 0, 'H'},
         {0, 0, 0, 0}
       };
@@ -343,7 +346,9 @@ public:
     }
   }
 
-  CDnsThread(CDnsSeedOpts* opts, int idIn) : id(idIn) {
+  const bool fTCP;
+
+  CDnsThread(CDnsSeedOpts* opts, int idIn, bool fTCPIn) : id(idIn), fTCP(fTCPIn) {
     dns_opt.host = opts->host;
     dns_opt.ns = opts->ns;
     dns_opt.mbox = opts->mbox;
@@ -359,7 +364,10 @@ public:
   }
 
   void run() {
-    dnsserver(&dns_opt);
+    if (fTCP)
+      dnsserver_tcp(&dns_opt);
+    else
+      dnsserver(&dns_opt);
   }
 };
 
@@ -663,13 +671,17 @@ int main(int argc, char **argv) {
   if (fDNS) {
     dnsThread.clear();
     for (int i=0; i<opts.nDnsThreads; i++) {
-      dnsThread.push_back(new CDnsThread(&opts, i));
+      dnsThread.push_back(new CDnsThread(&opts, i, false));
     }
-    if (dnsserver_init(&dnsThread[0]->dns_opt) < 0) {
+    if (opts.fTCP) {
+      // one more thread, for TCP
+      dnsThread.push_back(new CDnsThread(&opts, opts.nDnsThreads, true));
+    }
+    if (dnsserver_init(&dnsThread[0]->dns_opt, opts.fTCP) < 0) {
       exit(1);
     }
-    printf("Starting %i DNS threads for %s on %s (port %i)...", opts.nDnsThreads, opts.host, opts.ns, opts.nPort);
-    for (int i=0; i<opts.nDnsThreads; i++) {
+    printf("Starting %i UDP%s DNS threads for %s on %s (port %i)...", opts.nDnsThreads, opts.fTCP ? " and 1 TCP" : "", opts.host, opts.ns, opts.nPort);
+    for (int i=0; i<dnsThread.size(); i++) {
       pthread_create(&threadDns, NULL, ThreadDNS, dnsThread[i]);
       printf(".");
     }

@@ -14,6 +14,8 @@
 #include <time.h>
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
 #include <unistd.h>
 
 #include "dns.h"
@@ -33,6 +35,21 @@
 // a record (without options).
 #define EDNS_UDP_SIZE BUFLEN
 #define OPT_SIZE 11
+
+// Maximum number of simultaneous TCP connections, and the number of seconds a
+// TCP connection may take to send each complete request.
+#define TCP_MAX_CONNECTIONS 64
+#define TCP_TIMEOUT 10
+
+// Maximum size of DNS responses over TCP. This allows including more addresses
+// than in UDP responses, while (together with its 2-byte length prefix) still
+// fitting in a single TCP segment on a typical 1500-byte MTU path: 1500 - 40
+// (IPv6 header) - 32 (TCP header with timestamps) - 2 = 1426.
+#define TCP_BUFLEN 1426
+
+// Maximum number of addresses in a response (16 bytes is the size of the
+// smallest address record, an A record with compressed name).
+#define MAX_ADDRS (TCP_BUFLEN / 16)
 
 // Socket option to receive the destination address of incoming packets (as
 // an IPV6_PKTINFO control message), so replies can be sent from that address.
@@ -374,7 +391,9 @@ static ssize_t add_opt(unsigned char* outbuf, ssize_t len, bool edns, int ext_rc
   return outpos - outbuf;
 }
 
-ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insize, unsigned char* outbuf) {
+// Handle the request in inbuf, writing a response of at most outsize bytes to
+// outbuf. Returns the size of the response, or -1 if there is none.
+ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insize, unsigned char* outbuf, size_t outsize) {
   if (insize < 12) // DNS header
     return -1;
   // copy id
@@ -430,7 +449,7 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   if (edns_version > 0) return add_opt(outbuf, set_error(outbuf, 0, outpos - outbuf), edns, 1);
   if (nquestion == 0) return add_opt(outbuf, set_error(outbuf, 0, 12), edns, 0); /* printf("No questions?\n"); */
   // leave room for the OPT record in the response
-  unsigned char *outend = outbuf + BUFLEN - (edns ? OPT_SIZE : 0);
+  unsigned char *outend = outbuf + outsize - (edns ? OPT_SIZE : 0);
 
   // refuse names outside our zone
   int namel = strlen(name), hostl = strlen(opt->host);
@@ -485,8 +504,9 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
   
   // A/AAAA records
   if (exists && (typ == TYPE_A || typ == TYPE_AAAA)) {
-    addr_t addr[32];
-    int naddr = opt->cb((void*)opt, name, addr, 32, typ == TYPE_A, typ == TYPE_AAAA);
+    addr_t addr[MAX_ADDRS];
+    int maxaddr = outsize / 16 < MAX_ADDRS ? outsize / 16 : MAX_ADDRS;
+    int naddr = opt->cb((void*)opt, name, addr, maxaddr, typ == TYPE_A, typ == TYPE_AAAA);
     int n = 0;
     while (n < naddr) {
       int ret = 1;
@@ -535,8 +555,9 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
 }
 
 static int listenSocket = -1;
+static int tcpListenSocket = -1;
 
-int dnsserver_init(const dns_opt_t *opt) {
+int dnsserver_init(const dns_opt_t *opt, bool tcp) {
   struct sockaddr_in6 si_me;
   memset((char *) &si_me, 0, sizeof(si_me));
   si_me.sin6_family = AF_INET6;
@@ -560,6 +581,125 @@ int dnsserver_init(const dns_opt_t *opt) {
     close(listenSocket);
     listenSocket = -1;
     return -1;
+  }
+
+  if (!tcp) return 0;
+
+  // TCP socket
+  if ((tcpListenSocket=socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP))==-1) {
+    fprintf(stderr, "Unable to create DNS TCP socket: %s\n", strerror(errno));
+    return -1;
+  }
+  setsockopt(tcpListenSocket, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof v6only);
+  // allow restarting while old connections are still in TIME_WAIT
+  setsockopt(tcpListenSocket, SOL_SOCKET, SO_REUSEADDR, &sockopt, sizeof sockopt);
+  if (bind(tcpListenSocket, (struct sockaddr*)&si_me, sizeof(si_me))==-1 || listen(tcpListenSocket, TCP_MAX_CONNECTIONS)==-1) {
+    fprintf(stderr, "Unable to bind DNS TCP socket to [%s]:%i: %s\n", opt->addr, opt->port, strerror(errno));
+    close(tcpListenSocket);
+    tcpListenSocket = -1;
+    return -1;
+  }
+  fcntl(tcpListenSocket, F_SETFL, fcntl(tcpListenSocket, F_GETFL) | O_NONBLOCK);
+  return 0;
+}
+
+struct tcp_connection {
+  int fd;
+  // time the connection was accepted, or its last complete request was received
+  time_t last;
+  // received (partial) requests, prefixed by their 2-byte length
+  size_t len;
+  unsigned char buf[2 + BUFLEN];
+};
+
+int dnsserver_tcp(dns_opt_t *opt) {
+  if (tcpListenSocket == -1)
+    return -1;
+
+  struct tcp_connection conns[TCP_MAX_CONNECTIONS];
+  int nconns = 0;
+  unsigned char outbuf[2 + TCP_BUFLEN];
+  while (1) {
+    // Wait for data on any connection, or for a new connection if there is
+    // room for one.
+    struct pollfd fds[TCP_MAX_CONNECTIONS + 1];
+    for (int i = 0; i < nconns; i++) {
+      fds[i].fd = conns[i].fd;
+      fds[i].events = POLLIN;
+      fds[i].revents = 0;
+    }
+    int nfds = nconns;
+    bool listening = nconns < TCP_MAX_CONNECTIONS;
+    if (listening) {
+      fds[nfds].fd = tcpListenSocket;
+      fds[nfds].events = POLLIN;
+      fds[nfds].revents = 0;
+      nfds++;
+    }
+    if (poll(fds, nfds, 1000) < 0 && errno != EINTR) {
+      sleep(1);
+      continue;
+    }
+    time_t now = time(NULL);
+
+    // Process existing connections. Iterate backwards, so that closing one (by
+    // moving the last one in its place) does not affect the ones still to be
+    // processed.
+    for (int i = nconns - 1; i >= 0; i--) {
+      struct tcp_connection *conn = &conns[i];
+      bool close_conn = now - conn->last > TCP_TIMEOUT;
+      if (!close_conn && (fds[i].revents & (POLLIN | POLLHUP | POLLERR))) {
+        ssize_t n = recv(conn->fd, conn->buf + conn->len, sizeof(conn->buf) - conn->len, 0);
+        if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) {
+          close_conn = true;
+        } else if (n > 0) {
+          conn->len += n;
+        }
+        // Handle all complete requests.
+        while (!close_conn && conn->len >= 2) {
+          size_t msglen = (conn->buf[0] << 8) + conn->buf[1];
+          if (msglen > BUFLEN) {
+            // too large for us to handle
+            close_conn = true;
+            break;
+          }
+          if (conn->len < 2 + msglen) break;
+          ssize_t ret = dnshandle(opt, conn->buf + 2, msglen, outbuf + 2, TCP_BUFLEN);
+          ++(opt->nRequests);
+          if (ret <= 0) {
+            close_conn = true;
+            break;
+          }
+          outbuf[0] = ret >> 8;
+          outbuf[1] = ret & 0xFF;
+          // The response is small, so it should fit in the socket's send
+          // buffer. If it does not, the client is not reading its responses.
+          if (send(conn->fd, outbuf, ret + 2, 0) != ret + 2) {
+            close_conn = true;
+            break;
+          }
+          conn->len -= 2 + msglen;
+          memmove(conn->buf, conn->buf + 2 + msglen, conn->len);
+          conn->last = now;
+        }
+      }
+      if (close_conn) {
+        close(conn->fd);
+        conns[i] = conns[--nconns];
+      }
+    }
+
+    // Accept a new connection.
+    if (listening && (fds[nfds - 1].revents & POLLIN)) {
+      int fd = accept(tcpListenSocket, NULL, NULL);
+      if (fd >= 0) {
+        fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+        conns[nconns].fd = fd;
+        conns[nconns].last = now;
+        conns[nconns].len = 0;
+        nconns++;
+      }
+    }
   }
   return 0;
 }
@@ -593,7 +733,7 @@ int dnsserver(dns_opt_t *opt) {
     if (insize <= 0)
       continue;
 
-    ssize_t ret = dnshandle(opt, inbuf, insize, outbuf);
+    ssize_t ret = dnshandle(opt, inbuf, insize, outbuf, BUFLEN);
     if (ret <= 0)
       continue;
 

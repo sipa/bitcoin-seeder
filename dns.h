@@ -28,13 +28,18 @@ struct dns_opt_t {
   uint64_t nRequests;
 };
 
-// Create and bind the listening socket, using opt's addr and port. Must be
-// called (successfully) once, before any dnsserver() call. Returns 0 on
-// success, or -1 on failure (after printing an error message).
-int dnsserver_init(const dns_opt_t *opt);
+// Create and bind the listening UDP socket (and TCP socket, if tcp is set),
+// using opt's addr and port. Must be called (successfully) once, before any
+// dnsserver() or dnsserver_tcp() call. Returns 0 on success, or -1 on failure
+// (after printing an error message).
+int dnsserver_init(const dns_opt_t *opt, bool tcp);
 
-// Serve DNS requests. Can be called from multiple threads simultaneously
-// (with a different opt each). Only returns on failure.
+// Serve DNS requests over UDP. Can be called from multiple threads
+// simultaneously (with a different opt each). Only returns on failure.
 int dnsserver(dns_opt_t *opt);
+
+// Serve DNS requests over TCP. Must only be called from a single thread (with
+// an opt different from those used for dnsserver). Only returns on failure.
+int dnsserver_tcp(dns_opt_t *opt);
 
 #endif
