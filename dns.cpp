@@ -20,6 +20,15 @@
 
 #define BUFLEN 512
 
+// Timer values in our SOA record. Refresh, retry, and expire only matter for
+// secondary servers. The minimum determines how long resolvers may cache
+// negative responses (RFC 2308); keep it short, so that e.g. a temporary lack
+// of good nodes after a restart does not get cached for long.
+#define SOA_REFRESH 604800
+#define SOA_RETRY 86400
+#define SOA_EXPIRE 2592000
+#define SOA_MINIMUM 60
+
 // Socket option to receive the destination address of incoming packets (as
 // an IPV6_PKTINFO control message), so replies can be sent from that address.
 #if defined(IPV6_RECVPKTINFO)
@@ -337,7 +346,7 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
     max_auth_size = newpos - outpos;
 
     newpos = outpos;
-    write_record_soa(&newpos, outend, "", apex_offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), 604800, 86400, 2592000, 604800);
+    write_record_soa(&newpos, outend, "", apex_offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), SOA_REFRESH, SOA_RETRY, SOA_EXPIRE, SOA_MINIMUM);
     if (max_auth_size < newpos - outpos)
         max_auth_size = newpos - outpos;
   }
@@ -354,7 +363,7 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
 
   // SOA records (only at the zone apex)
   if (is_apex && (typ == TYPE_SOA || typ == QTYPE_ANY) && opt->mbox) {
-    int ret2 = write_record_soa(&outpos, outend - max_auth_size, "", offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), 604800, 86400, 2592000, 604800);
+    int ret2 = write_record_soa(&outpos, outend - max_auth_size, "", offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), SOA_REFRESH, SOA_RETRY, SOA_EXPIRE, SOA_MINIMUM);
     if (!ret2) { outbuf[7]++; }
   }
   
@@ -389,7 +398,7 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
     // response. If we replied with NS above we'd create a bad horizontal
     // referral loop, as the NS response indicates where the resolver should
     // try next.
-    int ret2 = write_record_soa(&outpos, outend, "", apex_offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), 604800, 86400, 2592000, 604800);
+    int ret2 = write_record_soa(&outpos, outend, "", apex_offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), SOA_REFRESH, SOA_RETRY, SOA_EXPIRE, SOA_MINIMUM);
     if (!ret2) { outbuf[9]++; }
   }
   
