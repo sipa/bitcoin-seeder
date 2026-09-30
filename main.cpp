@@ -62,6 +62,7 @@ public:
                               "--minheight <n> Minimum height of block chain\n"
                               "--testnet       Use testnet (testnet3)\n"
                               "--testnet4      Use testnet4\n"
+                              "--signet        Use signet (the default one)\n"
                               "--wipeban       Wipe list of banned nodes\n"
                               "--wipeignore    Wipe list of ignored nodes\n"
                               "-?, --help      Show this text\n"
@@ -88,6 +89,7 @@ public:
         {"minheight", required_argument, 0, 'x'},
         {"testnet", no_argument, 0, 'T'},
         {"testnet4", no_argument, 0, 'U'},
+        {"signet", no_argument, 0, 'S'},
         {"wipeban", no_argument, &fWipeBan, 1},
         {"wipeignore", no_argument, &fWipeBan, 1},
         {"help", no_argument, 0, 'H'},
@@ -203,10 +205,11 @@ public:
         }
 
         case 'T':
-        case 'U': {
-          ChainType selected = (c == 'T') ? ChainType::TESTNET3 : ChainType::TESTNET4;
+        case 'U':
+        case 'S': {
+          ChainType selected = (c == 'T') ? ChainType::TESTNET3 : (c == 'U') ? ChainType::TESTNET4 : ChainType::SIGNET;
           if (chain != ChainType::MAIN && chain != selected) {
-            fprintf(stderr, "Cannot use both --testnet and --testnet4.\n");
+            fprintf(stderr, "Only one of --testnet, --testnet4, and --signet can be used.\n");
             exit(1);
           }
           chain = selected;
@@ -511,6 +514,9 @@ static const string testnet_seeds[] = {"testnet-seed.bitcoin.jonasschnelli.ch",
 static const string testnet4_seeds[] = {"seed.testnet4.bitcoin.sprovoost.nl",
                                         "seed.testnet4.wiz.biz",
                                         ""};
+static const string signet_seeds[] = {"seed.signet.bitcoin.sprovoost.nl",
+                                      "seed.signet.achownodes.xyz",
+                                      ""};
 static const string *seeds = mainnet_seeds;
 static vector<string> vSeeds;
 
@@ -595,6 +601,16 @@ int main(int argc, char **argv) {
       pchMessageStart[2] = 0x3f;
       pchMessageStart[3] = 0x28;
       seeds = testnet4_seeds;
+      break;
+    }
+
+    case ChainType::SIGNET: {
+      printf("Using signet.\n");
+      pchMessageStart[0] = 0x0a;
+      pchMessageStart[1] = 0x03;
+      pchMessageStart[2] = 0xcf;
+      pchMessageStart[3] = 0x40;
+      seeds = signet_seeds;
       break;
     }
   }
