@@ -26,7 +26,7 @@
 
 using namespace std;
 
-bool fTestNet = false;
+ChainType chainType = ChainType::MAIN;
 
 /** Parse a decimal integer in the range [min, max] (the entire string must be a number). */
 static bool ParseRangedInt(const char *str, long min, long max, int& out) {
@@ -45,7 +45,7 @@ public:
   int nP2Port;
   int nMinimumHeight;
   int nDnsThreads;
-  int fUseTestNet;
+  ChainType chain;
   int fWipeBan;
   int fWipeIgnore;
   int fNoDNS;
@@ -64,7 +64,7 @@ public:
   std::vector<string> vSeeds;
   std::set<uint64_t> filter_whitelist;
 
-  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), nP2Port(0), nMinimumHeight(0), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false), fNoDNS(false), nZoneInterval(120), ipv4_proxy(NULL), ipv6_proxy(NULL), magic(NULL), knownblock(NULL) {}
+  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), nP2Port(0), nMinimumHeight(0), mbox(NULL), ns(NULL), host(NULL), tor(NULL), chain(ChainType::MAIN), fWipeBan(false), fWipeIgnore(false), fNoDNS(false), nZoneInterval(120), ipv4_proxy(NULL), ipv6_proxy(NULL), magic(NULL), knownblock(NULL) {}
 
   void ParseCommandLine(int argc, char **argv) {
     static const char *help = "Bitcoin-seeder\n"
@@ -118,7 +118,7 @@ public:
         {"magic", required_argument, 0, 'q'},
         {"minheight", required_argument, 0, 'x'},
         {"knownblock", required_argument, 0, 'K'},
-        {"testnet", no_argument, &fUseTestNet, 1},
+        {"testnet", no_argument, 0, 'T'},
         {"wipeban", no_argument, &fWipeBan, 1},
         {"wipeignore", no_argument, &fWipeBan, 1},
         {"nodns", no_argument, &fNoDNS, 1},
@@ -243,6 +243,11 @@ public:
             exit(1);
           }
           knownblock = optarg;
+          break;
+        }
+
+        case 'T': {
+          chain = ChainType::TESTNET3;
           break;
         }
 
@@ -828,14 +833,21 @@ int main(int argc, char **argv) {
     }
   }
   bool fDNS = true;
-  if (opts.fUseTestNet) {
+  chainType = opts.chain;
+  switch (chainType) {
+    case ChainType::MAIN: {
+      break;
+    }
+
+    case ChainType::TESTNET3: {
       printf("Using testnet.\n");
       pchMessageStart[0] = 0x0b;
       pchMessageStart[1] = 0x11;
       pchMessageStart[2] = 0x09;
       pchMessageStart[3] = 0x07;
       seeds = testnet_seeds;
-      fTestNet = true;
+      break;
+    }
   }
   if (opts.nP2Port) {
     printf("Using P2P port %i\n", opts.nP2Port);
@@ -858,7 +870,10 @@ int main(int argc, char **argv) {
     hashKnownBlock = *uint256::FromHex(opts.knownblock);
   } else if (!opts.magic) {
     // There is no default known block for custom networks.
-    hashKnownBlock = fTestNet ? testnet_known_block : mainnet_known_block;
+    switch (chainType) {
+      case ChainType::MAIN: hashKnownBlock = mainnet_known_block; break;
+      case ChainType::TESTNET3: hashKnownBlock = testnet_known_block; break;
+    }
   }
   if (!opts.vSeeds.empty()) {
     printf("Overriding DNS seeds\n");
