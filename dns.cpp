@@ -1,3 +1,6 @@
+// Request the RFC 3542 API (IPV6_RECVPKTINFO) on macOS.
+#define __APPLE_USE_RFC_3542 1
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -16,17 +19,17 @@
 
 #define BUFLEN 512
 
-#if defined(IP_RECVDSTADDR)
-# define DSTADDR_SOCKOPT IP_RECVDSTADDR
-# define DSTADDR_DATASIZE (CMSG_SPACE(sizeof(struct in6_addr)))
-# define dstaddr(x) (CMSG_DATA(x))
+// Socket option to receive the destination address of incoming packets (as
+// an IPV6_PKTINFO control message), so replies can be sent from that address.
+#if defined(IPV6_RECVPKTINFO)
+# define DSTADDR_SOCKOPT IPV6_RECVPKTINFO
 #elif defined(IPV6_PKTINFO)
+// Older (RFC 2292) API, where IPV6_PKTINFO is also used to enable reception.
 # define DSTADDR_SOCKOPT IPV6_PKTINFO
-# define DSTADDR_DATASIZE (CMSG_SPACE(sizeof(struct in6_pktinfo)))
-# define dstaddr(x) (&(((struct in6_pktinfo *)(CMSG_DATA(x)))->ipi6_addr))
 #else
 # error "can't determine socket option"
 #endif
+#define DSTADDR_DATASIZE (CMSG_SPACE(sizeof(struct in6_pktinfo)))
 
 union control_data {
   struct cmsghdr cmsg;
@@ -423,23 +426,23 @@ int dnsserver(dns_opt_t *opt) {
   }
   
   unsigned char inbuf[BUFLEN], outbuf[BUFLEN];
-  struct iovec iov[1] = {
-    {
-      .iov_base = inbuf,
-      .iov_len = sizeof(inbuf),
-    },
-  };
-  union control_data cmsg;
-  struct msghdr msg = {
-    .msg_name = &si_other,
-    .msg_namelen = sizeof(si_other),
-    .msg_iov = iov,
-    .msg_iovlen = 1,
-    .msg_control = &cmsg,
-    .msg_controllen = sizeof(cmsg),
-  };
   for (; 1; ++(opt->nRequests))
   {
+    struct iovec iov[1] = {
+      {
+        .iov_base = inbuf,
+        .iov_len = sizeof(inbuf),
+      },
+    };
+    union control_data cmsg;
+    struct msghdr msg = {
+      .msg_name = &si_other,
+      .msg_namelen = sizeof(si_other),
+      .msg_iov = iov,
+      .msg_iovlen = 1,
+      .msg_control = &cmsg,
+      .msg_controllen = sizeof(cmsg),
+    };
     ssize_t insize = recvmsg(listenSocket, &msg, 0);
     if (insize <= 0)
       continue;
@@ -448,21 +451,39 @@ int dnsserver(dns_opt_t *opt) {
     if (ret <= 0)
       continue;
 
-    bool handled = false;
-    for (struct cmsghdr*hdr = CMSG_FIRSTHDR(&msg); hdr; hdr = CMSG_NXTHDR(&msg, hdr))
+    // Find the address the request was sent to (for IPv4 requests on this
+    // IPv6 socket, as an IPv4-mapped address).
+    struct in6_pktinfo pktinfo;
+    bool have_pktinfo = false;
+    for (struct cmsghdr *hdr = CMSG_FIRSTHDR(&msg); hdr; hdr = CMSG_NXTHDR(&msg, hdr))
     {
-      if (hdr->cmsg_level == IPPROTO_IP && hdr->cmsg_type == DSTADDR_SOCKOPT)
+      if (hdr->cmsg_level == IPPROTO_IPV6 && hdr->cmsg_type == IPV6_PKTINFO)
       {
-        msg.msg_iov[0].iov_base = outbuf;
-        msg.msg_iov[0].iov_len = ret;
-        sendmsg(listenSocket, &msg, 0);
-        msg.msg_iov[0].iov_base = inbuf;
-        msg.msg_iov[0].iov_len = sizeof(inbuf);
-        handled = true;
+        memcpy(&pktinfo, CMSG_DATA(hdr), sizeof(pktinfo));
+        have_pktinfo = true;
       }
     }
-    if (!handled)
-      sendto(listenSocket, outbuf, ret, 0, (struct sockaddr*)&si_other, sizeof(si_other));
+
+    // Send the reply, from that same address if known.
+    iov[0].iov_base = outbuf;
+    iov[0].iov_len = ret;
+    msg.msg_control = NULL;
+    msg.msg_controllen = 0;
+    msg.msg_flags = 0;
+    if (have_pktinfo)
+    {
+      // Let the routing table pick the outgoing interface.
+      pktinfo.ipi6_ifindex = 0;
+      memset(&cmsg, 0, sizeof(cmsg));
+      msg.msg_control = &cmsg;
+      msg.msg_controllen = CMSG_SPACE(sizeof(pktinfo));
+      struct cmsghdr *hdr = CMSG_FIRSTHDR(&msg);
+      hdr->cmsg_level = IPPROTO_IPV6;
+      hdr->cmsg_type = IPV6_PKTINFO;
+      hdr->cmsg_len = CMSG_LEN(sizeof(pktinfo));
+      memcpy(CMSG_DATA(hdr), &pktinfo, sizeof(pktinfo));
+    }
+    sendmsg(listenSocket, &msg, 0);
   }
   return 0;
 }
