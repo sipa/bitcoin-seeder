@@ -44,6 +44,7 @@ bool CAddrDb::Get_(CServiceResult &ip, int &wait) {
     ourId.pop_front();
   }
   ip.service = idToInfo[ret].ip;
+  ip.services = idToInfo[ret].services;
   ip.ourLastSuccess = idToInfo[ret].ourLastSuccess;
   nDirty++;
   return true;

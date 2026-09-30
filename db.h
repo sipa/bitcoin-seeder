@@ -171,7 +171,7 @@ public:
 
 struct CServiceResult {
     CService service;
-    uint64_t services;
+    uint64_t services; // known services on input, services reported by the node on output
     bool fGood;
     int nBanTime;
     int nHeight;
