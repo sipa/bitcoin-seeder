@@ -21,6 +21,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <net/if.h>
+#include <unistd.h>
 #include <netinet/in.h>
 #include <ifaddrs.h>
 #endif

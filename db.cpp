@@ -31,7 +31,7 @@ void CAddrInfo::Update(bool good) {
 }
 
 bool CAddrDb::Get_(CServiceResult &ip, int &wait) {
-  int64 now = time(NULL);
+  int64_t now = time(NULL);
   int tot = unkId.size() + ourId.size();
   if (tot == 0) {
     wait = 5;
@@ -124,7 +124,7 @@ void CAddrDb::Add_(const CAddress &addr, bool force) {
     return;
   CService ipp(addr);
   if (banned.count(ipp)) {
-    time_t bantime = banned[ipp];
+    int64_t bantime = banned[ipp];
     if (force || (bantime < time(NULL) && addr.nTime > bantime))
       banned.erase(ipp);
     else

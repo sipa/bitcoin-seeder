@@ -11,6 +11,7 @@
 
 #include "bitcoin.h"
 #include "db.h"
+#include "streams.h"
 
 using namespace std;
 
@@ -246,7 +247,7 @@ extern "C" void* ThreadCrawler(void* data) {
     std::vector<CServiceResult> ips;
     int wait = 5;
     db.GetMany(ips, 16, wait);
-    int64 now = time(NULL);
+    int64_t now = time(NULL);
     if (ips.empty()) {
       wait *= 1000;
       wait += rand() % (500 * *nThreads);
@@ -421,7 +422,7 @@ extern "C" void* ThreadDumper(void*) {
       FILE *f = fopen("dnsseed.dat.new","w+");
       if (f) {
         {
-          CAutoFile cf(f);
+          AutoFile cf(f);
           cf << db;
         }
         rename("dnsseed.dat.new", "dnsseed.dat");
@@ -593,7 +594,7 @@ int main(int argc, char **argv) {
   FILE *f = fopen("dnsseed.dat","r");
   if (f) {
     printf("Loading dnsseed.dat...");
-    CAutoFile cf(f);
+    AutoFile cf(f);
     cf >> db;
     if (opts.fWipeBan)
         db.banned.clear();
