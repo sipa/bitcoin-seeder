@@ -5,11 +5,11 @@
 #include <map>
 #include <vector>
 #include <deque>
-#include <bit>
 
 #include "netbase.h"
 #include "protocol.h"
 #include "util.h"
+#include "util/serfloat.h"
 
 #define MIN_RETRY 1000
 
@@ -37,8 +37,8 @@ std::string static inline ToString(const CService &ip) {
 
 /** Serializes floats as their IEEE 754 binary32 representation, in little endian order. */
 struct FloatFormatter {
-  template<typename Stream> void Ser(Stream& s, float f) { ser_writedata32(s, std::bit_cast<uint32_t>(f)); }
-  template<typename Stream> void Unser(Stream& s, float& f) { f = std::bit_cast<float>(ser_readdata32(s)); }
+  template<typename Stream> void Ser(Stream& s, float f) { ser_writedata32(s, EncodeFloat(f)); }
+  template<typename Stream> void Unser(Stream& s, float& f) { f = DecodeFloat(ser_readdata32(s)); }
 };
 
 class CAddrStat {
