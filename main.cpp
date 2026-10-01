@@ -59,10 +59,11 @@ public:
   const char *ipv4_proxy;
   const char *ipv6_proxy;
   const char *magic;
+  const char *knownblock;
   std::vector<string> vSeeds;
   std::set<uint64_t> filter_whitelist;
 
-  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), nP2Port(0), nMinimumHeight(0), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false), fNoDNS(false), nZoneInterval(120), ipv4_proxy(NULL), ipv6_proxy(NULL), magic(NULL) {}
+  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), nP2Port(0), nMinimumHeight(0), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false), fNoDNS(false), nZoneInterval(120), ipv4_proxy(NULL), ipv6_proxy(NULL), magic(NULL), knownblock(NULL) {}
 
   void ParseCommandLine(int argc, char **argv) {
     static const char *help = "Bitcoin-seeder\n"
@@ -84,6 +85,7 @@ public:
                               "--p2port <port> P2P port to connect to\n"
                               "--magic <hex>   Magic string/network prefix\n"
                               "--minheight <n> Minimum height of block chain\n"
+                              "--knownblock <hash> Hash of a block that good nodes must have\n"
                               "--testnet       Use testnet\n"
                               "--wipeban       Wipe list of banned nodes\n"
                               "--wipeignore    Wipe list of ignored nodes\n"
@@ -114,6 +116,7 @@ public:
         {"p2port", required_argument, 0, 'b'},
         {"magic", required_argument, 0, 'q'},
         {"minheight", required_argument, 0, 'x'},
+        {"knownblock", required_argument, 0, 'K'},
         {"testnet", no_argument, &fUseTestNet, 1},
         {"wipeban", no_argument, &fWipeBan, 1},
         {"wipeignore", no_argument, &fWipeBan, 1},
@@ -230,6 +233,15 @@ public:
         case 'x': {
           int n = strtol(optarg, NULL, 10);
           if (n > 0 && n <= 0x7fffffff) nMinimumHeight = n;
+          break;
+        }
+
+        case 'K': {
+          if (!uint256::FromHex(optarg)) {
+            fprintf(stderr, "Invalid block hash: %s\n", optarg);
+            exit(1);
+          }
+          knownblock = optarg;
           break;
         }
 
@@ -540,6 +552,10 @@ static const string testnet_seeds[] = {"testnet-seed.alexykot.me",
                                        "testnet-seed.bitcoin.schildbach.de",
                                        ""};
 static const string *seeds = mainnet_seeds;
+
+// Blocks that good nodes must have in their active chain (from Bitcoin Core's assumeutxo data).
+static constexpr uint256 mainnet_known_block{"000000000000000000010b17283c3c400507969a9c2afd1dcf2082ec5cca2880"}; // height 880000
+static constexpr uint256 testnet_known_block{"00000000000000f4971a7fb37fbdff89315b69a2e1920c467654a382f0d64786"}; // height 4840000
 static vector<string> vSeeds;
 
 /** Configuration for the zone file export thread. */
@@ -829,6 +845,13 @@ int main(int argc, char **argv) {
   if (opts.nMinimumHeight) {
     printf("Using minimum height %i\n", opts.nMinimumHeight);
     nMinimumHeight = opts.nMinimumHeight;
+  }
+  if (opts.knownblock) {
+    printf("Using known block %s\n", opts.knownblock);
+    hashKnownBlock = *uint256::FromHex(opts.knownblock);
+  } else if (!opts.magic) {
+    // There is no default known block for custom networks.
+    hashKnownBlock = fTestNet ? testnet_known_block : mainnet_known_block;
   }
   if (!opts.vSeeds.empty()) {
     printf("Overriding DNS seeds\n");
