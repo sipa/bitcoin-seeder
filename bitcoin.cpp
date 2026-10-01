@@ -21,7 +21,12 @@ static const int HANDSHAKE_TIMEOUT = 30;
 // Maximum time (in seconds) from initiating a connection until it is closed, no matter what.
 static const int CONNECTION_TIMEOUT = 60;
 
+// Size of a serialized block header.
+static const size_t BLOCK_HEADER_SIZE = 80;
+
 using namespace std;
+
+uint256 hashKnownBlock;
 
 class CNode {
   SOCKET sock;
@@ -36,6 +41,9 @@ class CNode {
   CAddress you;
   bool fGotVersion;
   bool fGotVerAck;
+  bool fGotAddr;
+  // Whether we're still waiting for the response to our request for the known block's header.
+  bool fWaitKnownBlock;
 
   int GetTimeout() {
       if (you.IsTor())
@@ -82,11 +90,22 @@ class CNode {
   }
  
   void GotVersion() {
+    if (!hashKnownBlock.IsNull()) {
+      // Request the header of the known block. With an empty locator, nodes respond with just the
+      // header of the hashStop block, if it is in their active chain.
+      PushMessage("getheaders", PROTOCOL_VERSION, vector<uint256>{}, hashKnownBlock);
+      fWaitKnownBlock = true;
+    }
     if (vAddr) {
       PushMessage("getaddr");
-      doneAfter = time(NULL) + GetTimeout();
-    } else {
-      doneAfter = time(NULL) + 1;
+    }
+    doneAfter = time(NULL) + (vAddr || fWaitKnownBlock ? GetTimeout() : 1);
+  }
+
+  // Called when the response to an outstanding request was received, to finish soon if nothing else is outstanding.
+  void MaybeDone(int64_t now) {
+    if ((!vAddr || fGotAddr) && !fWaitKnownBlock) {
+      if (doneAfter == 0 || doneAfter > now + 1) doneAfter = now + 1;
     }
   }
 
@@ -137,7 +156,8 @@ class CNode {
       int64_t now = time(NULL);
       vector<CAddress>::iterator it = vAddrNew.begin();
       if (vAddrNew.size() > 1) {
-        if (doneAfter == 0 || doneAfter > now + 1) doneAfter = now + 1;
+        fGotAddr = true;
+        MaybeDone(now);
       }
       while (it != vAddrNew.end()) {
         CAddress &addr = *it;
@@ -150,7 +170,27 @@ class CNode {
       }
       return false;
     }
-    
+
+    if (strCommand == "headers" && fWaitKnownBlock) {
+      // We expect exactly the header of the known block. Nodes that don't have it in their active
+      // chain don't respond, or respond with no headers.
+      fWaitKnownBlock = false;
+      bool fMatch = false;
+      if (ReadCompactSize(vRecv) == 1) {
+        std::array<std::byte, BLOCK_HEADER_SIZE> header;
+        vRecv >> header;
+        ReadCompactSize(vRecv); // Number of transactions (always 0).
+        fMatch = Hash(header) == hashKnownBlock;
+      }
+      if (!fMatch) {
+        close(sock);
+        sock = INVALID_SOCKET;
+        return true;
+      }
+      MaybeDone(time(NULL));
+      return false;
+    }
+
     return false;
   }
   
@@ -200,6 +240,8 @@ public:
   CNode(const CService& ip, vector<CAddress>* vAddrIn) : you(ip), vAddr(vAddrIn), ban(0), doneAfter(0), nVersion(0), nStartingHeight(0) {
     fGotVersion = false;
     fGotVerAck = false;
+    fGotAddr = false;
+    fWaitKnownBlock = false;
   }
   bool Run() {
     bool res = true;
@@ -250,6 +292,7 @@ public:
       Send();
     }
     if (sock == INVALID_SOCKET) res = false;
+    if (fWaitKnownBlock) res = false;
     close(sock);
     sock = INVALID_SOCKET;
     return (ban == 0) && res;
