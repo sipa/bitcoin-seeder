@@ -26,11 +26,6 @@
 #include <ifaddrs.h>
 #endif
 
-#include <cstdint>
-
-typedef int64_t int64;
-typedef uint64_t uint64;
-
 typedef u_int SOCKET;
 #ifdef __APPLE__
 #define MSG_NOSIGNAL        0

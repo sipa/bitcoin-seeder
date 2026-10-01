@@ -881,14 +881,6 @@ std::vector<unsigned char> CNetAddr::GetGroup() const
     return vchRet;
 }
 
-uint64 CNetAddr::GetHash() const
-{
-    uint256 hash = Hash(&ip[0], &ip[16]);
-    uint64 nRet;
-    memcpy(&nRet, &hash, sizeof(nRet));
-    return nRet;
-}
-
 void CNetAddr::print() const
 {
     printf("CNetAddr(%s)\n", ToString().c_str());

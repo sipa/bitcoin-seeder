@@ -6,8 +6,11 @@
 #include <openssl/sha.h>
 #include <stdarg.h>
 
+#include "span.h"
 #include "uint256.h"
 
+#include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -65,13 +68,12 @@ public:
 #define SHARED_CRITICAL_BLOCK(cs)     \
     if (CCriticalBlock criticalblock = CCriticalBlock(cs, true))
 
-template<typename T1> inline uint256 Hash(const T1 pbegin, const T1 pend)
+/** Compute the double-SHA256 hash of data. */
+inline uint256 Hash(std::span<const std::byte> data)
 {
-    static unsigned char pblank[1];
-    uint256 hash1;
-    SHA256((pbegin == pend ? pblank : (unsigned char*)&pbegin[0]), (pend - pbegin) * sizeof(pbegin[0]), (unsigned char*)&hash1);
-    uint256 hash2;
-    SHA256((unsigned char*)&hash1, sizeof(hash1), (unsigned char*)&hash2);
+    uint256 hash1, hash2;
+    SHA256(UCharCast(data.data()), data.size(), hash1.begin());
+    SHA256(hash1.begin(), hash1.size(), hash2.begin());
     return hash2;
 }
 

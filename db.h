@@ -41,7 +41,7 @@ private:
 public:
   CAddrStat() : weight(0), count(0), reliability(0) {}
 
-  void Update(bool good, int64 age, double tau) {
+  void Update(bool good, int64_t age, double tau) {
     double f =  exp(-age/tau);
     reliability = reliability * f + (good ? (1.0-f) : 0);
     count = count * f + 1;
@@ -72,10 +72,10 @@ class CAddrInfo {
 private:
   CService ip;
   uint64_t services;
-  int64 lastTry;
-  int64 ourLastTry;
-  int64 ourLastSuccess;
-  int64 ignoreTill;
+  int64_t lastTry;
+  int64_t ourLastTry;
+  int64_t ourLastSuccess;
+  int64_t ignoreTill;
   CAddrStat stat2H;
   CAddrStat stat8H;
   CAddrStat stat1D;
@@ -185,7 +185,7 @@ struct CServiceResult {
     int nHeight;
     int nClientV;
     std::string strClientV;
-    int64 ourLastSuccess;
+    int64_t ourLastSuccess;
 };
 
 //             seen nodes
@@ -219,7 +219,7 @@ protected:
   void GetIPs_(std::set<CNetAddr>& ips, uint64_t requestedFlags, int max, const bool *nets); // get a random set of IPs (shared lock only)
 
 public:
-  std::map<CService, time_t> banned; // nodes that are banned, with their unban time (a)
+  std::map<CService, int64_t> banned; // nodes that are banned, with their unban time (a)
 
   void GetStats(CAddrDbStats &stats) {
     SHARED_CRITICAL_BLOCK(cs) {
@@ -261,8 +261,7 @@ public:
   //   n (number of ips in (b,c,d))
   //   CAddrInfo[n]
   //   banned
-  // acquires a shared lock (this does not suffice for read mode, but we assume that only happens at startup, single-threaded)
-  // this way, dumping does not interfere with GetIPs_, which is called from the DNS thread
+  // writing only acquires a shared lock, so that dumping does not interfere with GetIPs_, which is called from the DNS thread
   template<typename Stream>
   void Serialize(Stream& s) const {
     int nVersion = 0;
@@ -280,7 +279,7 @@ public:
   void Unserialize(Stream& s) {
     int nVersion;
     s >> nVersion;
-    SHARED_CRITICAL_BLOCK(cs) {
+    CRITICAL_BLOCK(cs) {
       nId = 0;
       int n;
       s >> n;

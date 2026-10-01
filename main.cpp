@@ -250,7 +250,7 @@ extern "C" void* ThreadCrawler(void* data) {
     std::vector<CServiceResult> ips;
     int wait = 5;
     db.GetMany(ips, 16, wait);
-    int64 now = time(NULL);
+    int64_t now = time(NULL);
     if (ips.empty()) {
       wait *= 1000;
       wait += rand() % (500 * *nThreads);

@@ -14,7 +14,6 @@
 #include "serialize.h"
 #include <cassert>
 #include <string>
-#include "uint256.h"
 
 static const int PROTOCOL_VERSION = 60000;
 
@@ -45,16 +44,18 @@ class CMessageHeader
 
         SERIALIZE_METHODS(CMessageHeader, obj)
         {
-            READWRITE(obj.pchMessageStart, obj.pchCommand, obj.nMessageSize, obj.nChecksum);
+            READWRITE(obj.pchMessageStart, obj.pchCommand, obj.nMessageSize, obj.pchChecksum);
         }
 
     // TODO: make private (improves encapsulation)
     public:
         enum { COMMAND_SIZE=12 };
+        static constexpr size_t CHECKSUM_SIZE = 4;
+        static constexpr size_t HEADER_SIZE = 24;
         char pchMessageStart[sizeof(::pchMessageStart)];
         char pchCommand[COMMAND_SIZE];
         unsigned int nMessageSize;
-        unsigned int nChecksum;
+        uint8_t pchChecksum[CHECKSUM_SIZE];
 };
 
 enum
@@ -71,7 +72,7 @@ class CAddress : public CService
 {
     public:
         CAddress();
-        CAddress(CService ipIn, uint64 nServicesIn=NODE_NETWORK);
+        CAddress(CService ipIn, uint64_t nServicesIn=NODE_NETWORK);
 
         void Init();
 
@@ -85,35 +86,10 @@ class CAddress : public CService
 
     // TODO: make private (improves encapsulation)
     public:
-        uint64 nServices;
+        uint64_t nServices;
 
         // disk and network only
         unsigned int nTime;
-};
-
-class CInv
-{
-    public:
-        CInv();
-        CInv(int typeIn, const uint256& hashIn);
-        CInv(const std::string& strType, const uint256& hashIn);
-
-        SERIALIZE_METHODS(CInv, obj)
-        {
-            READWRITE(obj.type, obj.hash);
-        }
-
-        friend bool operator<(const CInv& a, const CInv& b);
-
-        bool IsKnownType() const;
-        const char* GetCommand() const;
-        std::string ToString() const;
-        void print() const;
-
-    // TODO: make private (improves encapsulation)
-    public:
-        int type;
-        uint256 hash;
 };
 
 #endif // __INCLUDED_PROTOCOL_H__

@@ -15,13 +15,6 @@
 # include <arpa/inet.h>
 #endif
 
-static const char* ppszTypeName[] =
-{
-    "ERROR",
-    "tx",
-    "block",
-};
-
 unsigned short nDefaultP2Port = 0;
 
 unsigned char pchMessageStart[4] = { 0xf9, 0xbe, 0xb4, 0xd9 };
@@ -32,7 +25,7 @@ CMessageHeader::CMessageHeader()
     memset(pchCommand, 0, sizeof(pchCommand));
     pchCommand[1] = 1;
     nMessageSize = -1;
-    nChecksum = 0;
+    memset(pchChecksum, 0, sizeof(pchChecksum));
 }
 
 CMessageHeader::CMessageHeader(const char* pszCommand, unsigned int nMessageSizeIn)
@@ -42,7 +35,7 @@ CMessageHeader::CMessageHeader(const char* pszCommand, unsigned int nMessageSize
     memcpy(pchCommand, pszCommand, command_len);
     memset(pchCommand + command_len, 0, COMMAND_SIZE - command_len);
     nMessageSize = nMessageSizeIn;
-    nChecksum = 0;
+    memset(pchChecksum, 0, sizeof(pchChecksum));
 }
 
 std::string CMessageHeader::GetCommand() const
@@ -90,7 +83,7 @@ CAddress::CAddress() : CService()
     Init();
 }
 
-CAddress::CAddress(CService ipIn, uint64 nServicesIn) : CService(ipIn)
+CAddress::CAddress(CService ipIn, uint64_t nServicesIn) : CService(ipIn)
 {
     Init();
     nServices = nServicesIn;
@@ -105,59 +98,4 @@ void CAddress::Init()
 void CAddress::print() const
 {
     printf("CAddress(%s)\n", ToString().c_str());
-}
-
-CInv::CInv()
-{
-    type = 0;
-    hash.SetNull();
-}
-
-CInv::CInv(int typeIn, const uint256& hashIn)
-{
-    type = typeIn;
-    hash = hashIn;
-}
-
-CInv::CInv(const std::string& strType, const uint256& hashIn)
-{
-    int i;
-    for (i = 1; i < ARRAYLEN(ppszTypeName); i++)
-    {
-        if (strType == ppszTypeName[i])
-        {
-            type = i;
-            break;
-        }
-    }
-    if (i == ARRAYLEN(ppszTypeName))
-        throw std::out_of_range("CInv::CInv(string, uint256) : unknown type");
-    hash = hashIn;
-}
-
-bool operator<(const CInv& a, const CInv& b)
-{
-    return (a.type < b.type || (a.type == b.type && a.hash < b.hash));
-}
-
-bool CInv::IsKnownType() const
-{
-    return (type >= 1 && type < ARRAYLEN(ppszTypeName));
-}
-
-const char* CInv::GetCommand() const
-{
-    if (!IsKnownType())
-        throw std::out_of_range("CInv::GetCommand() : unknown type");
-    return ppszTypeName[type];
-}
-
-std::string CInv::ToString() const
-{
-    return "CInv()";
-}
-
-void CInv::print() const
-{
-    printf("CInv\n");
 }
