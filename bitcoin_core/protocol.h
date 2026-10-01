@@ -12,8 +12,11 @@
 
 #include "netbase.h"
 #include "serialize.h"
+#include <cassert>
 #include <string>
 #include "uint256.h"
+
+static const int PROTOCOL_VERSION = 60000;
 
 extern bool fTestNet;
 extern unsigned short nDefaultP2Port;
@@ -40,13 +43,10 @@ class CMessageHeader
         std::string GetCommand() const;
         bool IsValid() const;
 
-        IMPLEMENT_SERIALIZE
-            (
-             READWRITE(FLATDATA(pchMessageStart));
-             READWRITE(FLATDATA(pchCommand));
-             READWRITE(nMessageSize);
-             READWRITE(nChecksum);
-            )
+        SERIALIZE_METHODS(CMessageHeader, obj)
+        {
+            READWRITE(obj.pchMessageStart, obj.pchCommand, obj.nMessageSize, obj.nChecksum);
+        }
 
     // TODO: make private (improves encapsulation)
     public:
@@ -75,19 +75,11 @@ class CAddress : public CService
 
         void Init();
 
-        IMPLEMENT_SERIALIZE
-            (
-             CAddress* pthis = const_cast<CAddress*>(this);
-             CService* pip = (CService*)pthis;
-             if (fRead)
-                 pthis->Init();
-             if (nType & SER_DISK)
-             READWRITE(nVersion);
-             if ((nType & SER_DISK) || !(nType & SER_GETHASH))
-             READWRITE(nTime);
-             READWRITE(nServices);
-             READWRITE(*pip);
-            )
+        // Serialization as used in addr messages.
+        SERIALIZE_METHODS(CAddress, obj)
+        {
+            READWRITE(obj.nTime, obj.nServices, AsBase<CService>(obj));
+        }
 
         void print() const;
 
@@ -106,11 +98,10 @@ class CInv
         CInv(int typeIn, const uint256& hashIn);
         CInv(const std::string& strType, const uint256& hashIn);
 
-        IMPLEMENT_SERIALIZE
-        (
-            READWRITE(type);
-            READWRITE(hash);
-        )
+        SERIALIZE_METHODS(CInv, obj)
+        {
+            READWRITE(obj.type, obj.hash);
+        }
 
         friend bool operator<(const CInv& a, const CInv& b);
 

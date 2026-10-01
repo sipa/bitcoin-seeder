@@ -4,6 +4,7 @@
 #include "netbase.h"
 #include "protocol.h"
 #include "serialize.h"
+#include "streams.h"
 #include "uint256.h"
 
 #define BITCOIN_SEED_NONCE  0x0539a019ca550825ULL
@@ -12,8 +13,8 @@ using namespace std;
 
 class CNode {
   SOCKET sock;
-  CDataStream vSend;
-  CDataStream vRecv;
+  DataStream vSend;
+  DataStream vRecv;
   unsigned int nHeaderStart;
   unsigned int nMessageStart;
   int nVersion;
@@ -63,7 +64,7 @@ class CNode {
     if (vSend.empty()) return;
     int nBytes = send(sock, &vSend[0], vSend.size(), 0);
     if (nBytes > 0) {
-      vSend.erase(vSend.begin(), vSend.begin() + nBytes);
+      vSend.ignore(nBytes);
     } else {
       close(sock);
       sock = INVALID_SOCKET;
@@ -94,7 +95,7 @@ class CNode {
     }
   }
 
-  bool ProcessMessage(string strCommand, CDataStream& vRecv) {
+  bool ProcessMessage(string strCommand, DataStream& vRecv) {
     if (strCommand == "version") {
       int64 nTime;
       uint64 nServicesMe, nServicesFrom;
@@ -143,19 +144,19 @@ class CNode {
   
   bool ProcessMessages() {
     if (vRecv.empty()) return false;
+    const auto magic = std::as_bytes(std::span{pchMessageStart});
     do {
-      CDataStream::iterator pstart = search(vRecv.begin(), vRecv.end(), BEGIN(pchMessageStart), END(pchMessageStart));
-      int nHeaderSize = vRecv.GetSerializeSize(CMessageHeader());
+      DataStream::iterator pstart = search(vRecv.begin(), vRecv.end(), magic.begin(), magic.end());
+      int nHeaderSize = GetSerializeSize(CMessageHeader());
       if (vRecv.end() - pstart < nHeaderSize) {
         if (vRecv.size() > nHeaderSize) {
-          vRecv.erase(vRecv.begin(), vRecv.end() - nHeaderSize);
+          vRecv.ignore(vRecv.size() - nHeaderSize);
         }
         break;
       }
-      vRecv.erase(vRecv.begin(), pstart);
-      vector<char> vHeaderSave(vRecv.begin(), vRecv.begin() + nHeaderSize);
+      vRecv.ignore(pstart - vRecv.begin());
       CMessageHeader hdr;
-      vRecv >> hdr;
+      DataStream{std::span<const std::byte>{vRecv.data(), size_t(nHeaderSize)}} >> hdr;
       if (!hdr.IsValid()) { 
         ban = 100000; return true;
       }
@@ -165,15 +166,15 @@ class CNode {
         ban = 100000;
         return true; 
       }
-      if (nMessageSize > vRecv.size()) {
-        vRecv.insert(vRecv.begin(), vHeaderSave.begin(), vHeaderSave.end());
+      if (nHeaderSize + nMessageSize > vRecv.size()) {
         break;
       }
+      vRecv.ignore(nHeaderSize);
       uint256 hash = Hash(vRecv.begin(), vRecv.begin() + nMessageSize);
       unsigned int nChecksum = 0;
       memcpy(&nChecksum, &hash, sizeof(nChecksum));
       if (nChecksum != hdr.nChecksum) continue;
-      CDataStream vMsg(vRecv.begin(), vRecv.begin() + nMessageSize, vRecv.nType, vRecv.nVersion);
+      DataStream vMsg{std::span<const std::byte>{vRecv.data(), nMessageSize}};
       vRecv.ignore(nMessageSize);
       if (ProcessMessage(strCommand, vMsg))
         return true;

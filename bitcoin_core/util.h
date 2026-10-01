@@ -8,6 +8,9 @@
 
 #include "uint256.h"
 
+#include <string>
+#include <vector>
+
 #define loop                for (;;)
 #define BEGIN(a)            ((char*)&(a))
 #define END(a)              ((char*)&((&(a))[1]))

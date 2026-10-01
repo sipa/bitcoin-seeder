@@ -11,6 +11,7 @@
 
 #include "bitcoin.h"
 #include "db.h"
+#include "streams.h"
 
 using namespace std;
 
@@ -424,7 +425,7 @@ extern "C" void* ThreadDumper(void*) {
       FILE *f = fopen("dnsseed.dat.new","w+");
       if (f) {
         {
-          CAutoFile cf(f);
+          AutoFile cf(f);
           cf << db;
         }
         rename("dnsseed.dat.new", "dnsseed.dat");
@@ -596,7 +597,7 @@ int main(int argc, char **argv) {
   FILE *f = fopen("dnsseed.dat","r");
   if (f) {
     printf("Loading dnsseed.dat...");
-    CAutoFile cf(f);
+    AutoFile cf(f);
     cf >> db;
     if (opts.fWipeBan)
         db.banned.clear();

@@ -21,9 +21,15 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <net/if.h>
+#include <unistd.h>
 #include <netinet/in.h>
 #include <ifaddrs.h>
 #endif
+
+#include <cstdint>
+
+typedef int64_t int64;
+typedef uint64_t uint64;
 
 typedef u_int SOCKET;
 #ifdef __APPLE__

@@ -81,10 +81,10 @@ class CNetAddr
         friend bool operator!=(const CNetAddr& a, const CNetAddr& b);
         friend bool operator<(const CNetAddr& a, const CNetAddr& b);
 
-        IMPLEMENT_SERIALIZE
-            (
-             READWRITE(FLATDATA(ip));
-            )
+        SERIALIZE_METHODS(CNetAddr, obj)
+        {
+            READWRITE(obj.ip);
+        }
 };
 
 /** A combination of a network address (CNetAddr) and a (TCP) port */
@@ -119,15 +119,10 @@ class CService : public CNetAddr
         CService(const struct in6_addr& ipv6Addr, unsigned short port);
         CService(const struct sockaddr_in6& addr);
 
-        IMPLEMENT_SERIALIZE
-            (
-             CService* pthis = const_cast<CService*>(this);
-             READWRITE(FLATDATA(ip));
-             unsigned short portN = htons(port);
-             READWRITE(portN);
-             if (fRead)
-                 pthis->port = ntohs(portN);
-            )
+        SERIALIZE_METHODS(CService, obj)
+        {
+            READWRITE(AsBase<CNetAddr>(obj), Using<BigEndianFormatter<2>>(obj.port));
+        }
 };
 
 enum Network ParseNetwork(std::string net);
