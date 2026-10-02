@@ -81,3 +81,11 @@ the -p 15353 option.
 Another solution is allowing a binary to bind to ports < 1024 with setcap (IPv6 access-safe)
 
 $ setcap 'cap_net_bind_service=+ep' /path/to/dnsseed
+
+DNSSEC
+------
+
+The built-in DNS server does not support DNSSEC. Instead, dnsseed can
+periodically export a zone file with good nodes (see --zonefile), to be
+signed and served by an authoritative DNS server such as BIND. See
+README-dnssec.md for a setup guide.
