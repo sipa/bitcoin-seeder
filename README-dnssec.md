@@ -12,6 +12,7 @@ automatically.
 - [Requirements](#requirements)
 - [Install software](#install-software)
 - [Configure BIND](#configure-bind)
+- [Configure zone reloads](#configure-zone-reloads)
 - [Build and start bitcoin-seeder](#build-and-start-bitcoin-seeder)
 - [Publish the delegation and DS record](#publish-the-delegation-and-ds-record)
 - [Testing](#testing)
@@ -42,7 +43,7 @@ not needed for this setup.
 
 ```sh
 apt update
-apt install bind9 bind9-dnsutils bind9-utils
+apt install bind9 bind9-dnsutils bind9-utils sudo
 ```
 
 Allow inbound TCP and UDP port 53 in your firewall. If you use UFW, allow
@@ -72,25 +73,23 @@ listen-on { any; };
 listen-on-v6 { any; };
 ```
 
-Add the `seeder` user to the `bind` group, so that it can write the zone file,
-and make BIND reload the zone using `rndc` (members of the group can read
-`/etc/bind/rndc.key`). Note that this also allows the user to read BIND's
-configuration, and to use any other `rndc` command. The change takes effect
-the next time the user logs in.
+Keep the `seeder` user out of the `bind` group: members can read
+`/etc/bind/rndc.key` and administer BIND with `rndc`. Instead, give the
+crawler its own export directory and allow only a specific reload command
+through `sudo`. Keep DNSSEC keys in a BIND-owned directory that the crawler
+cannot access.
+
+Create both directories. BIND needs write access to the export directory for
+its signed zone and journals. The setgid bit makes new exports inherit the
+`bind` group without giving `seeder` membership of that group. Debian and
+Ubuntu's AppArmor profiles allow BIND to write under `/var/lib/bind`.
 
 ```sh
-adduser seeder bind
+install -d -o seeder -g bind -m 2770 /var/lib/bind/dnsseed.example.com-export
+install -d -o bind -g bind -m 0750 /var/lib/bind/dnsseed.example.com
 ```
 
-Create a writable directory for the zone, journals and DNSSEC keys, which
-bitcoin-seeder (through the `bind` group) writes the zone file to. On Debian,
-AppArmor only lets BIND use files in a few places, such as `/var/lib/bind`.
-
-```sh
-install -d -o bind -g bind -m 2770 /var/lib/bind/dnsseed.example.com
-```
-
-Create an initial `/var/lib/bind/dnsseed.example.com/db.dnsseed.example.com`,
+Create an initial `/var/lib/bind/dnsseed.example.com-export/db.dnsseed.example.com`,
 so that BIND can load the zone before the first export:
 
 ```dns
@@ -107,8 +106,8 @@ $TTL 3600
 ```
 
 ```sh
-chown bind:bind /var/lib/bind/dnsseed.example.com/db.dnsseed.example.com
-chmod 0644 /var/lib/bind/dnsseed.example.com/db.dnsseed.example.com
+chown seeder:bind /var/lib/bind/dnsseed.example.com-export/db.dnsseed.example.com
+chmod 0640 /var/lib/bind/dnsseed.example.com-export/db.dnsseed.example.com
 ```
 
 Add this zone to `/etc/bind/named.conf.local`:
@@ -116,7 +115,7 @@ Add this zone to `/etc/bind/named.conf.local`:
 ```conf
 zone "dnsseed.example.com" {
     type primary;
-    file "/var/lib/bind/dnsseed.example.com/db.dnsseed.example.com";
+    file "/var/lib/bind/dnsseed.example.com-export/db.dnsseed.example.com";
     key-directory "/var/lib/bind/dnsseed.example.com";
     dnssec-policy default;
     inline-signing yes;
@@ -142,7 +141,7 @@ Check the configuration before restarting:
 
 ```sh
 named-checkconf
-named-checkzone dnsseed.example.com /var/lib/bind/dnsseed.example.com/db.dnsseed.example.com
+named-checkzone dnsseed.example.com /var/lib/bind/dnsseed.example.com-export/db.dnsseed.example.com
 systemctl restart named
 systemctl --no-pager status named
 journalctl -u named --since '5 minutes ago' --no-pager
@@ -150,7 +149,50 @@ journalctl -u named --since '5 minutes ago' --no-pager
 
 `named-checkconf` should exit successfully without output, and
 `named-checkzone` should report `loaded serial 1` and `OK` for the initial
-file. The Debian service is `named.service`.
+file. BIND's service is `named.service` on Debian and Ubuntu.
+
+## Configure zone reloads
+
+As root, use `visudo` to create `/etc/sudoers.d/dnsseed-zone-reload`, owned by
+root with mode `0440`:
+
+```sh
+visudo -f /etc/sudoers.d/dnsseed-zone-reload
+```
+
+Add this rule, replacing the user and zone name consistently:
+
+```sudoers
+seeder ALL=(root) NOPASSWD: /usr/sbin/rndc -k /etc/bind/rndc.key -s 127.0.0.1 reload dnsseed.example.com
+```
+
+The rule matches the complete command and its arguments, allowing the
+crawler to reload only its own zone without reading BIND's administrative
+key. Do not omit the arguments or use wildcards: that would grant broader
+access. The crawler must not be able to modify this file or the `rndc`
+executable. Check the configuration:
+
+```sh
+visudo -c
+```
+
+The `-k` and `-s` arguments match BIND's default control channel on Debian
+(no `controls` statement in the configuration, and the key in
+`/etc/bind/rndc.key`). If you configured a different one, adjust them in both
+this rule and dnsseed's `--zone-reload` command below.
+
+sudo logs every reload, by default every 2 minutes, along with a PAM session
+for each. To keep these out of the system logs, you can add this line to the
+same file, at the cost of also not logging failed attempts by that user
+(dnsseed still reports failed reloads in its output):
+
+```sudoers
+Defaults:seeder !syslog, !pam_session
+```
+
+This works with the classic sudo, the default on Debian. sudo-rs (the default
+on recent Ubuntu releases) does not support these settings, and `visudo -c`
+rejects them there; leave the line out in that case.
 
 ## Build and start bitcoin-seeder
 
@@ -166,16 +208,38 @@ As the `seeder` user, clone and build the repository, and start dnsseed:
 git clone https://github.com/sipa/bitcoin-seeder.git
 cd bitcoin-seeder
 make
+umask 0027
 ./dnsseed -h dnsseed.example.com -n dnsseed-host.example.com \
     -m contact-email.example.com --nodns \
-    --zonefile /var/lib/bind/dnsseed.example.com/db.dnsseed.example.com \
-    --zone-reload "/usr/sbin/rndc reload dnsseed.example.com"
+    --zonefile /var/lib/bind/dnsseed.example.com-export/db.dnsseed.example.com \
+    --zone-reload "/usr/bin/sudo -n /usr/sbin/rndc -k /etc/bind/rndc.key -s 127.0.0.1 reload dnsseed.example.com"
 ```
 
 Keep the process running (for example under a service manager), always from
 the same directory: its database (`dnsseed.dat`) is stored there. `--nodns`
-disables the built-in DNS server, so dnsseed needs no root privileges and no
-open ports.
+disables the built-in DNS server, so dnsseed needs no open ports and runs as
+an ordinary user; only its fixed reload command runs as root through `sudo`.
+
+BIND reads the exported files through the inherited `bind` group; the umask
+additionally keeps other users from reading them (BIND does not need it).
+If you run the crawler under systemd, include these settings in its unit so
+BIND starts before the crawler, exported files retain these permissions,
+and `sudo` can acquire the privileges needed for the reload:
+
+```ini
+[Unit]
+Wants=named.service
+After=named.service
+
+[Service]
+UMask=0027
+NoNewPrivileges=false
+```
+
+`NoNewPrivileges=true` prevents `sudo` from gaining root privileges, even
+with a matching sudoers rule. Test the reload from the same service sandbox
+if you add other hardening settings. `sudo -n` fails instead of prompting
+for a password, so authorization and reload errors appear in dnsseed's output.
 
 Every 2 minutes (see `--zone-interval`), dnsseed replaces the zone file and
 runs the reload command. The zone contains the SOA and NS records (from `-h`,
@@ -201,8 +265,9 @@ The database needs time to collect reliable nodes. Nothing is exported until
 there are good nodes; if there are none (for example when starting with an
 empty database), the previous zone file is kept.
 
-For multiple seeds, give each a separate BIND zone, and dnsseed process and
-database directory.
+For multiple seeds, give each a separate BIND zone, crawler user, database
+directory, export directory, and DNSSEC key directory. Add a separate sudoers
+rule for each crawler, restricting its reload command to its own zone.
 
 ## Publish the delegation and DS record
 
@@ -233,6 +298,17 @@ rndc dnssec -checkds published dnsseed.example.com
 ```
 
 ## Testing
+
+As root, check that the crawler cannot read BIND's administrative key or
+access the DNSSEC key directory, and reload the zone as the crawler user:
+
+```sh
+runuser -u seeder -- test ! -r /etc/bind/rndc.key
+runuser -u seeder -- test ! -x /var/lib/bind/dnsseed.example.com
+runuser -u seeder -- /usr/bin/sudo -n /usr/sbin/rndc -k /etc/bind/rndc.key -s 127.0.0.1 reload dnsseed.example.com
+```
+
+Both permission checks and the reload command should exit successfully.
 
 Check local authoritative answers over UDP and TCP:
 
