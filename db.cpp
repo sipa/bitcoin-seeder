@@ -154,8 +154,9 @@ void CAddrDb::Add_(const CAddress &addr, bool force) {
   nDirty++;
 }
 
-void CAddrDb::GetIPs_(set<CNetAddr>& ips, uint64_t requestedFlags, int max, const bool* nets) {
+void CAddrDb::GetIPs_(set<CNetAddr>& ips, uint64_t requestedFlags, int max, const bool* nets, bool fallback) {
   if (goodId.size() == 0) {
+    if (!fallback) return;
     int id = -1;
     if (ourId.size() == 0) {
       if (unkId.size() == 0) return;
