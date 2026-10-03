@@ -11,6 +11,7 @@
 
 #include "bitcoin.h"
 #include "db.h"
+#include "streams.h"
 
 using namespace std;
 
@@ -65,6 +66,7 @@ public:
                               "-?, --help      Show this text\n"
                               "\n";
     bool showHelp = false;
+    bool fError = false;
 
     while(1) {
       static struct option long_options[] = {
@@ -86,7 +88,7 @@ public:
         {"testnet", no_argument, &fUseTestNet, 1},
         {"wipeban", no_argument, &fWipeBan, 1},
         {"wipeignore", no_argument, &fWipeBan, 1},
-        {"help", no_argument, 0, 'h'},
+        {"help", no_argument, 0, 'H'},
         {0, 0, 0, 0}
       };
       int option_index = 0;
@@ -198,8 +200,15 @@ public:
           break;
         }
 
-        case '?': {
+        case 'H': {
           showHelp = true;
+          break;
+        }
+
+        case '?': {
+          // Either an explicit -?, or an unknown option / missing argument.
+          showHelp = true;
+          if (optopt != '?') fError = true;
           break;
         }
       }
@@ -220,8 +229,14 @@ public:
         filter_whitelist.insert(NODE_NETWORK_LIMITED | NODE_WITNESS | NODE_P2P_V2 | NODE_COMPACT_FILTERS); // xc48
         filter_whitelist.insert(NODE_NETWORK_LIMITED | NODE_WITNESS | NODE_BLOOM); // x40c
     }
-    if (host != NULL && ns == NULL) showHelp = true;
-    if (showHelp) fprintf(stderr, help, argv[0]);
+    if (host != NULL && ns == NULL) {
+      showHelp = true;
+      fError = true;
+    }
+    if (showHelp) {
+      fprintf(stderr, help, argv[0]);
+      exit(fError ? 1 : 0);
+    }
   }
 };
 
@@ -235,7 +250,7 @@ extern "C" void* ThreadCrawler(void* data) {
     std::vector<CServiceResult> ips;
     int wait = 5;
     db.GetMany(ips, 16, wait);
-    int64 now = time(NULL);
+    int64_t now = time(NULL);
     if (ips.empty()) {
       wait *= 1000;
       wait += rand() % (500 * *nThreads);
@@ -410,27 +425,29 @@ extern "C" void* ThreadDumper(void*) {
       FILE *f = fopen("dnsseed.dat.new","w+");
       if (f) {
         {
-          CAutoFile cf(f);
+          AutoFile cf(f);
           cf << db;
         }
         rename("dnsseed.dat.new", "dnsseed.dat");
       }
       FILE *d = fopen("dnsseed.dump", "w");
-      fprintf(d, "# address                                        good  lastSuccess    %%(2h)   %%(8h)   %%(1d)   %%(7d)  %%(30d)  blocks      svcs  version\n");
+      if (d) fprintf(d, "# address                                        good  lastSuccess    %%(2h)   %%(8h)   %%(1d)   %%(7d)  %%(30d)  blocks      svcs  version\n");
       double stat[5]={0,0,0,0,0};
       for (vector<CAddrReport>::const_iterator it = v.begin(); it < v.end(); it++) {
         CAddrReport rep = *it;
-        fprintf(d, "%-47s  %4d  %11" PRId64 "  %6.2f%% %6.2f%% %6.2f%% %6.2f%% %6.2f%%  %6i  %08" PRIx64 "  %5i \"%s\"\n", rep.ip.ToString().c_str(), (int)rep.fGood, rep.lastSuccess, 100.0*rep.uptime[0], 100.0*rep.uptime[1], 100.0*rep.uptime[2], 100.0*rep.uptime[3], 100.0*rep.uptime[4], rep.blocks, rep.services, rep.clientVersion, rep.clientSubVersion.c_str());
+        if (d) fprintf(d, "%-47s  %4d  %11" PRId64 "  %6.2f%% %6.2f%% %6.2f%% %6.2f%% %6.2f%%  %6i  %08" PRIx64 "  %5i \"%s\"\n", rep.ip.ToString().c_str(), (int)rep.fGood, rep.lastSuccess, 100.0*rep.uptime[0], 100.0*rep.uptime[1], 100.0*rep.uptime[2], 100.0*rep.uptime[3], 100.0*rep.uptime[4], rep.blocks, rep.services, rep.clientVersion, rep.clientSubVersion.c_str());
         stat[0] += rep.uptime[0];
         stat[1] += rep.uptime[1];
         stat[2] += rep.uptime[2];
         stat[3] += rep.uptime[3];
         stat[4] += rep.uptime[4];
       }
-      fclose(d);
+      if (d) fclose(d);
       FILE *ff = fopen("dnsstats.log", "a");
-      fprintf(ff, "%llu %g %g %g %g %g\n", (unsigned long long)(time(NULL)), stat[0], stat[1], stat[2], stat[3], stat[4]);
-      fclose(ff);
+      if (ff) {
+        fprintf(ff, "%llu %g %g %g %g %g\n", (unsigned long long)(time(NULL)), stat[0], stat[1], stat[2], stat[3], stat[4]);
+        fclose(ff);
+      }
     }
   } while(1);
   return nullptr;
@@ -580,7 +597,7 @@ int main(int argc, char **argv) {
   FILE *f = fopen("dnsseed.dat","r");
   if (f) {
     printf("Loading dnsseed.dat...");
-    CAutoFile cf(f);
+    AutoFile cf(f);
     cf >> db;
     if (opts.fWipeBan)
         db.banned.clear();
