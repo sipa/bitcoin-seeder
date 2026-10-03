@@ -14,7 +14,19 @@
 
 #define BITCOIN_SEED_NONCE  0x0539a019ca550825ULL
 
+// Maximum time (in seconds) from initiating a connection until the version handshake completes
+// (that is, until verack is received).
+static const int HANDSHAKE_TIMEOUT = 30;
+
+// Maximum time (in seconds) from initiating a connection until it is closed, no matter what.
+static const int CONNECTION_TIMEOUT = 60;
+
+// Size of a serialized block header.
+static const size_t BLOCK_HEADER_SIZE = 80;
+
 using namespace std;
+
+uint256 hashKnownBlock;
 
 class CNode {
   SOCKET sock;
@@ -27,6 +39,11 @@ class CNode {
   int ban;
   int64_t doneAfter;
   CAddress you;
+  bool fGotVersion;
+  bool fGotVerAck;
+  bool fGotAddr;
+  // Whether we're still waiting for the response to our request for the known block's header.
+  bool fWaitKnownBlock;
 
   int GetTimeout() {
       if (you.IsTor())
@@ -73,16 +90,30 @@ class CNode {
   }
  
   void GotVersion() {
+    if (!hashKnownBlock.IsNull()) {
+      // Request the header of the known block. With an empty locator, nodes respond with just the
+      // header of the hashStop block, if it is in their active chain.
+      PushMessage("getheaders", PROTOCOL_VERSION, vector<uint256>{}, hashKnownBlock);
+      fWaitKnownBlock = true;
+    }
     if (vAddr) {
       PushMessage("getaddr");
-      doneAfter = time(NULL) + GetTimeout();
-    } else {
-      doneAfter = time(NULL) + 1;
+    }
+    doneAfter = time(NULL) + (vAddr || fWaitKnownBlock ? GetTimeout() : 1);
+  }
+
+  // Called when the response to an outstanding request was received, to finish soon if nothing else is outstanding.
+  void MaybeDone(int64_t now) {
+    if ((!vAddr || fGotAddr) && !fWaitKnownBlock) {
+      if (doneAfter == 0 || doneAfter > now + 1) doneAfter = now + 1;
     }
   }
 
   bool ProcessMessage(string strCommand, DataStream& vRecv) {
     if (strCommand == "version") {
+      if (fGotVersion) {
+        return false;
+      }
       int64_t nTime;
       uint64_t nServicesMe, nServicesFrom;
       CService addrMe, addrFrom;
@@ -95,22 +126,38 @@ class CNode {
         vRecv >> LIMITED_STRING(strSubVer, 256);
       if (nVersion >= 209 && !vRecv.empty())
         vRecv >> nStartingHeight;
+      fGotVersion = true;
       PushMessage("verack");
+      return false;
+    }
+
+    if (!fGotVersion) {
       return false;
     }
     
     if (strCommand == "verack") {
+      if (fGotVerAck) {
+        close(sock);
+        sock = INVALID_SOCKET;
+        return true;
+      }
+      fGotVerAck = true;
       GotVersion();
       return false;
     }
-    
+
+    if (!fGotVerAck) {
+      return false;
+    }
+
     if (strCommand == "addr" && vAddr) {
       vector<CAddress> vAddrNew;
       vRecv >> vAddrNew;
       int64_t now = time(NULL);
       vector<CAddress>::iterator it = vAddrNew.begin();
       if (vAddrNew.size() > 1) {
-        if (doneAfter == 0 || doneAfter > now + 1) doneAfter = now + 1;
+        fGotAddr = true;
+        MaybeDone(now);
       }
       while (it != vAddrNew.end()) {
         CAddress &addr = *it;
@@ -123,7 +170,27 @@ class CNode {
       }
       return false;
     }
-    
+
+    if (strCommand == "headers" && fWaitKnownBlock) {
+      // We expect exactly the header of the known block. Nodes that don't have it in their active
+      // chain don't respond, or respond with no headers.
+      fWaitKnownBlock = false;
+      bool fMatch = false;
+      if (ReadCompactSize(vRecv) == 1) {
+        std::array<std::byte, BLOCK_HEADER_SIZE> header;
+        vRecv >> header;
+        ReadCompactSize(vRecv); // Number of transactions (always 0).
+        fMatch = Hash(header) == hashKnownBlock;
+      }
+      if (!fMatch) {
+        close(sock);
+        sock = INVALID_SOCKET;
+        return true;
+      }
+      MaybeDone(time(NULL));
+      return false;
+    }
+
     return false;
   }
   
@@ -157,8 +224,9 @@ class CNode {
       auto payload = std::span<const std::byte>{vRecv}.subspan(nHeaderSize, nMessageSize);
       uint256 hash = Hash(payload);
       if (memcmp(hash.begin(), hdr.pchChecksum, CMessageHeader::CHECKSUM_SIZE) != 0) {
-        vRecv.erase(vRecv.begin(), vRecv.begin() + nHeaderSize);
-        continue;
+        close(sock);
+        sock = INVALID_SOCKET;
+        return true;
       }
       DataStream vMsg{payload};
       vRecv.erase(vRecv.begin(), vRecv.begin() + nHeaderSize + nMessageSize);
@@ -170,14 +238,30 @@ class CNode {
   
 public:
   CNode(const CService& ip, vector<CAddress>* vAddrIn) : you(ip), vAddr(vAddrIn), ban(0), doneAfter(0), nVersion(0), nStartingHeight(0) {
+    fGotVersion = false;
+    fGotVerAck = false;
+    fGotAddr = false;
+    fWaitKnownBlock = false;
   }
   bool Run() {
     bool res = true;
+    const int64_t start = time(NULL);
+    const int64_t handshakeDeadline = start + HANDSHAKE_TIMEOUT;
+    const int64_t connectionDeadline = start + CONNECTION_TIMEOUT;
     if (!ConnectSocket(you, sock)) return false;
     PushVersion();
     Send();
     int64_t now;
     while (now = time(NULL), ban == 0 && (doneAfter == 0 || doneAfter > now) && sock != INVALID_SOCKET) {
+      if (now >= connectionDeadline) {
+        // Just drop the connection.
+        if (!doneAfter) res = false;
+        break;
+      }
+      if (!doneAfter && now >= handshakeDeadline) {
+        res = false;
+        break;
+      }
       char pchBuf[0x10000];
       fd_set read_set, except_set;
       FD_ZERO(&read_set);
@@ -185,13 +269,8 @@ public:
       FD_SET(sock,&read_set);
       FD_SET(sock,&except_set);
       struct timeval wa;
-      if (doneAfter) {
-        wa.tv_sec = doneAfter - now;
-        wa.tv_usec = 0;
-      } else {
-        wa.tv_sec = GetTimeout();
-        wa.tv_usec = 0;
-      }
+      wa.tv_sec = min<int64_t>(doneAfter ? doneAfter : handshakeDeadline, connectionDeadline) - now;
+      wa.tv_usec = 0;
       int ret = select(sock+1, &read_set, NULL, &except_set, &wa);
       if (ret != 1) {
         if (!doneAfter) res = false;
@@ -213,6 +292,7 @@ public:
       Send();
     }
     if (sock == INVALID_SOCKET) res = false;
+    if (fWaitKnownBlock) res = false;
     close(sock);
     sock = INVALID_SOCKET;
     return (ban == 0) && res;
