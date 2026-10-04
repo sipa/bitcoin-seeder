@@ -24,6 +24,10 @@ static const int CONNECTION_TIMEOUT = 60;
 // Size of a serialized block header.
 static const size_t BLOCK_HEADER_SIZE = 80;
 
+// Maximum size (in bytes) of received messages. The largest messages we process (addr messages with
+// 1000 addresses) are about 30 kB.
+static const unsigned int MAX_RECEIVED_MESSAGE_SIZE = 256 * 1024;
+
 using namespace std;
 
 uint256 hashKnownBlock;
@@ -213,6 +217,12 @@ class CNode {
       if (nMessageSize > MAX_SIZE) { 
         ban = 100000;
         return true; 
+      }
+      if (nMessageSize > MAX_RECEIVED_MESSAGE_SIZE) {
+        // Disconnect before receiving (and buffering) the message.
+        close(sock);
+        sock = INVALID_SOCKET;
+        return true;
       }
       if (nHeaderSize + nMessageSize > vRecv.size()) {
         break;
