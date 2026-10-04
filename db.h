@@ -7,6 +7,7 @@
 #include <deque>
 #include <bit>
 
+#include "bitcoin.h"
 #include "netbase.h"
 #include "protocol.h"
 #include "util.h"
@@ -89,8 +90,12 @@ private:
   int total;
   int success;
   std::string clientSubVersion;
+  // Whether this node passed all checks (including having the known block) when we last connected to
+  // it successfully. It is reset when loading data written before it existed, or for another known
+  // block.
+  bool fVerified;
 public:
-  CAddrInfo() : services(0), lastTry(0), ourLastTry(0), ourLastSuccess(0), clientVersion(0), blocks(0), total(0), success(0) {}
+  CAddrInfo() : services(0), lastTry(0), ourLastTry(0), ourLastSuccess(0), clientVersion(0), blocks(0), total(0), success(0), fVerified(false) {}
   
   CAddrReport GetReport() const {
     CAddrReport ret;
@@ -110,6 +115,7 @@ public:
   }
   
   bool IsGood() const {
+    if (!fVerified) return false;
     if (ip.GetPort() != GetDefaultPort()) return false;
     if (!(services & NODE_NETWORK)) return false;
     if (!ip.IsRoutable()) return false;
@@ -140,13 +146,26 @@ public:
   friend class CAddrDb;
   
   SERIALIZE_METHODS(CAddrInfo, obj) {
-    uint8_t version = 4;
-    READWRITE(version, CNetAddr::V1(obj.ip), obj.services, obj.lastTry);
+    // Version 5 encodes the address in the BIP155 (V2) format, no longer includes the unused field
+    // after ourLastTry, and includes fVerified.
+    uint8_t version = 5;
+    READWRITE(version);
+    if (version > 5) throw std::ios_base::failure("Unsupported CAddrInfo version");
+    if (version >= 5) {
+      READWRITE(CNetAddr::V2(obj.ip));
+    } else {
+      READWRITE(CNetAddr::V1(obj.ip));
+    }
+    READWRITE(obj.services, obj.lastTry);
     uint8_t tried = obj.ourLastTry != 0;
     READWRITE(tried);
     if (tried) {
-      int64_t ignoreTill = 0; // no longer used
-      READWRITE(obj.ourLastTry, ignoreTill, obj.stat2H, obj.stat8H, obj.stat1D, obj.stat1W);
+      READWRITE(obj.ourLastTry);
+      if (version < 5) {
+        int64_t ignoreTill; // no longer used
+        READWRITE(ignoreTill);
+      }
+      READWRITE(obj.stat2H, obj.stat8H, obj.stat1D, obj.stat1W);
       if (version >= 1) {
         READWRITE(obj.stat1M);
       } else {
@@ -159,6 +178,11 @@ public:
         READWRITE(obj.blocks);
       if (version >= 4)
         READWRITE(obj.ourLastSuccess);
+      if (version >= 5) {
+        READWRITE(obj.fVerified);
+      } else {
+        SER_READ(obj, obj.fVerified = false);
+      }
     }
   }
 };
@@ -247,21 +271,22 @@ public:
   
   // serialization code
   // format:
-  //   nVersion (0 for now)
+  //   nVersion (1; files with version 0 can still be read)
+  //   hashKnownBlock (version >= 1): the known block that the CAddrInfo's fVerified refer to
   //   n (number of ips in (b,c,d))
   //   CAddrInfo[n]
-  //   banned
+  //   banned (with addresses in the BIP155 (V2) encoding for version >= 1, V1 before)
   // writing only acquires a shared lock, so that dumping does not interfere with GetIPs_, which is called from the DNS thread
   template<typename Stream>
   void Serialize(Stream& s) const {
-    int nVersion = 0;
-    s << nVersion;
+    int nVersion = 1;
+    s << nVersion << hashKnownBlock;
     SHARED_CRITICAL_BLOCK(cs) {
       int n = ourId.size() + unkId.size();
       s << n;
       for (int id : ourId) s << idToInfo.at(id);
       for (int id : unkId) s << idToInfo.at(id);
-      s << CNetAddr::V1(banned);
+      s << CNetAddr::V2(banned);
     }
   }
 
@@ -269,6 +294,12 @@ public:
   void Unserialize(Stream& s) {
     int nVersion;
     s >> nVersion;
+    if (nVersion < 0 || nVersion > 1) throw std::ios_base::failure("Unsupported dnsseed.dat version");
+    uint256 hashVerifiedKnownBlock;
+    if (nVersion >= 1) s >> hashVerifiedKnownBlock;
+    // Nodes were only verified if the data was written by a version that supports that, for the same
+    // known block.
+    const bool fKeepVerified = nVersion >= 1 && hashVerifiedKnownBlock == hashKnownBlock;
     CRITICAL_BLOCK(cs) {
       nId = 0;
       int n;
@@ -276,6 +307,7 @@ public:
       for (int i=0; i<n; i++) {
         CAddrInfo info;
         s >> info;
+        if (!fKeepVerified) info.fVerified = false;
         if (!info.GetBanTime() && IsReachable(info.ip)) {
           int id = nId++;
           idToInfo[id] = info;
@@ -289,7 +321,11 @@ public:
         }
       }
       nDirty++;
-      s >> CNetAddr::V1(banned);
+      if (nVersion >= 1) {
+        s >> CNetAddr::V2(banned);
+      } else {
+        s >> CNetAddr::V1(banned);
+      }
     }
   }
 

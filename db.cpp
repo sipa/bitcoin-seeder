@@ -66,6 +66,8 @@ void CAddrDb::Good_(const CService &addr, int clientV, std::string clientSV, int
   info.clientSubVersion = clientSV;
   info.blocks = blocks;
   info.services = services;
+  // All checks were passed in this successful connection.
+  info.fVerified = true;
   info.Update(true);
   if (info.IsGood() && goodId.count(id)==0) {
     goodId.insert(id);
