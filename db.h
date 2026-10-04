@@ -33,6 +33,10 @@ struct FloatFormatter {
   template<typename Stream> void Unser(Stream& s, float& f) { f = std::bit_cast<float>(ser_readdata32(s)); }
 };
 
+// Whether we can connect to addresses on the network of addr: IPv4 and IPv6, and Tor (but only if a Tor
+// proxy is configured). Addresses on other networks aren't stored.
+bool IsReachable(const CNetAddr& addr);
+
 class CAddrStat {
 private:
   float weight;
@@ -272,7 +276,7 @@ public:
       for (int i=0; i<n; i++) {
         CAddrInfo info;
         s >> info;
-        if (!info.GetBanTime()) {
+        if (!info.GetBanTime() && IsReachable(info.ip)) {
           int id = nId++;
           idToInfo[id] = info;
           ipToId[info.ip] = id;

@@ -146,6 +146,9 @@ class CNode {
       if (!vRecv.empty())
         vRecv >> nStartingHeight;
       fGotVersion = true;
+      // Ask for addresses in addrv2 messages (BIP155). Like Bitcoin Core, only ask peers with protocol
+      // version 70016 or higher, as some older software rejects unknown messages.
+      if (nVersion >= 70016) PushMessage("sendaddrv2");
       PushMessage("verack");
       return true;
     }
@@ -167,17 +170,18 @@ class CNode {
       return true;
     }
 
-    if (strCommand == "addr") {
+    if (strCommand == "addr" || strCommand == "addrv2") {
       uint64_t nCount = ReadCompactSize(vRecv);
       if (nCount > MAX_ADDR_TO_SEND) {
         // Disconnect before deserializing the addresses.
         return false;
       }
+      const auto& ser_params = strCommand == "addrv2" ? CAddress::V2_NETWORK : CAddress::V1_NETWORK;
       vector<CAddress> vAddrNew;
       vAddrNew.reserve(nCount);
       for (uint64_t i = 0; i < nCount; i++) {
         CAddress addr;
-        vRecv >> CAddress::V1_NETWORK(addr);
+        vRecv >> ser_params(addr);
         vAddrNew.push_back(addr);
       }
       if (!vAddr) return true;

@@ -15,7 +15,7 @@
 #include <cassert>
 #include <string>
 
-static const int PROTOCOL_VERSION = 60000;
+static const int PROTOCOL_VERSION = 70016;
 
 //! disconnect from peers older than this proto version
 static const int MIN_PEER_PROTO_VERSION = 31800;

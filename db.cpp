@@ -110,8 +110,17 @@ void CAddrDb::Skipped_(const CService &addr)
 }
 
 
+bool IsReachable(const CNetAddr& addr) {
+  if (addr.IsIPv4() || addr.IsIPv6()) return true;
+  CService proxy;
+  if (addr.IsTor()) return GetProxy(NET_ONION, proxy);
+  return false;
+}
+
 void CAddrDb::Add_(const CAddress &addr, bool force) {
   if (!force && !addr.IsRoutable())
+    return;
+  if (!IsReachable(addr))
     return;
   CService ipp(addr);
   if (banned.count(ipp)) {

@@ -13,6 +13,9 @@ Features:
   1 day and 1 week, to base decisions on.
 * very low memory (a few tens of megabytes) and cpu requirements.
 * crawlers run in parallel (by default 24 threads simultaneously).
+* learns addresses of all networks using BIP155 (addrv2) messages, and
+  also crawls Tor nodes if a Tor proxy is configured (-o), though only
+  IPv4 and IPv6 nodes are returned by the DNS server.
 * connects to nodes that support it using the encrypted BIP324 (v2)
   transport protocol, falling back to v1 for nodes that turn out not to.
 
