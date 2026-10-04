@@ -621,8 +621,7 @@ static std::string BuildZone(const ZoneExportConfig& cfg, uint32_t serial) {
   }
   for (const auto& [name, flags] : names) {
     set<CNetAddr> ips;
-    // Only good nodes; not the fallback to an untested node when there are none.
-    db.GetIPs(ips, flags, 1000, nets, /*fallback=*/false);
+    db.GetIPs(ips, flags, 1000, nets);
     std::vector<CNetAddr> v4, v6;
     for (const CNetAddr& ip : ips) {
       if (ip.IsIPv4()) {
