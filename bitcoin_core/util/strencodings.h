@@ -4,12 +4,14 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 // Stripped-down version of Bitcoin Core's util/strencodings.h, with only the
-// hex digit parsing functions (implemented inline, without a lookup table).
+// hex digit parsing functions and SanitizeString (implemented inline, without
+// lookup tables, and with only the default set of safe characters).
 
 #ifndef BITCOIN_UTIL_STRENCODINGS_H
 #define BITCOIN_UTIL_STRENCODINGS_H
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 
 /** Returns the value of a hex digit, or -1 if c is not a hex digit. */
@@ -31,6 +33,24 @@ inline bool IsHex(std::string_view str)
         if (HexDigit(c) < 0) return false;
     }
     return (str.size() > 0) && (str.size()%2 == 0);
+}
+
+/**
+ * Remove unsafe chars. Safe chars chosen to allow simple messages/URLs/email
+ * addresses, but avoid anything even possibly remotely dangerous like & or >
+ * @param[in] str    The string to sanitize
+ * @return           A new string without unsafe chars
+ */
+inline std::string SanitizeString(std::string_view str)
+{
+    static constexpr std::string_view SAFE_CHARS{"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,;-_/:?@()"};
+    std::string result;
+    for (char c : str) {
+        if (SAFE_CHARS.find(c) != std::string_view::npos) {
+            result.push_back(c);
+        }
+    }
+    return result;
 }
 
 namespace util {

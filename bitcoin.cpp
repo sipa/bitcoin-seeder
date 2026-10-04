@@ -11,6 +11,7 @@
 #include "streams.h"
 #include "uint256.h"
 #include "util.h"
+#include "util/strencodings.h"
 
 #define BITCOIN_SEED_NONCE  0x0539a019ca550825ULL
 
@@ -128,8 +129,10 @@ class CNode {
       if (nVersion == 10300) nVersion = 300;
       if (nVersion >= 106 && !vRecv.empty())
         vRecv >> nServicesFrom >> addrFrom >> nNonce;
-      if (nVersion >= 106 && !vRecv.empty())
+      if (nVersion >= 106 && !vRecv.empty()) {
         vRecv >> LIMITED_STRING(strSubVer, 256);
+        strSubVer = SanitizeString(strSubVer);
+      }
       if (nVersion >= 209 && !vRecv.empty())
         vRecv >> nStartingHeight;
       fGotVersion = true;
