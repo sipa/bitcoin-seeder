@@ -25,6 +25,9 @@ static const int CONNECTION_TIMEOUT = 60;
 // Size of a serialized block header.
 static const size_t BLOCK_HEADER_SIZE = 80;
 
+// Maximum number of addresses in an addr message (as in Bitcoin Core).
+static const size_t MAX_ADDR_TO_SEND = 1000;
+
 // Maximum size (in bytes) of received messages. The largest messages we process (addr messages with
 // 1000 addresses) are about 30 kB.
 static const unsigned int MAX_RECEIVED_MESSAGE_SIZE = 256 * 1024;
@@ -160,9 +163,20 @@ class CNode {
       return true;
     }
 
-    if (strCommand == "addr" && vAddr) {
+    if (strCommand == "addr") {
+      uint64_t nCount = ReadCompactSize(vRecv);
+      if (nCount > MAX_ADDR_TO_SEND) {
+        // Disconnect before deserializing the addresses.
+        return false;
+      }
       vector<CAddress> vAddrNew;
-      vRecv >> vAddrNew;
+      vAddrNew.reserve(nCount);
+      for (uint64_t i = 0; i < nCount; i++) {
+        CAddress addr;
+        vRecv >> addr;
+        vAddrNew.push_back(addr);
+      }
+      if (!vAddr) return true;
       int64_t now = time(NULL);
       vector<CAddress>::iterator it = vAddrNew.begin();
       if (vAddrNew.size() > 1) {
