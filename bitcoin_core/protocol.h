@@ -71,6 +71,17 @@ enum
     NODE_P2P_V2 = (1 << 11),
 };
 
+/** getdata message type flags */
+inline constexpr uint32_t MSG_WITNESS_FLAG = 1 << 30;
+
+/** getdata / inv message types (the ones that can occur in inv messages). */
+enum GetDataMsg : uint32_t {
+    MSG_TX = 1,
+    MSG_BLOCK = 2,
+    MSG_WTX = 5,                                      //!< Defined in BIP 339
+    MSG_WITNESS_TX = MSG_TX | MSG_WITNESS_FLAG,       //!< Defined in BIP144
+};
+
 class CAddress : public CService
 {
     public:

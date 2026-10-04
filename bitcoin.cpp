@@ -28,6 +28,10 @@ static const size_t BLOCK_HEADER_SIZE = 80;
 // Maximum number of addresses in an addr message (as in Bitcoin Core).
 static const size_t MAX_ADDR_TO_SEND = 1000;
 
+// Maximum number of entries in an inv message. Bitcoin Core accepts up to 50000 (MAX_INV_SZ), but
+// the inv messages nodes send us are much smaller.
+static const uint64_t MAX_INV_SIZE = 5000;
+
 // Maximum size (in bytes) of received messages. The largest messages we process (addr messages with
 // 1000 addresses) are about 30 kB.
 static const unsigned int MAX_RECEIVED_MESSAGE_SIZE = 256 * 1024;
@@ -191,6 +195,24 @@ class CNode {
         if (addr.nTime > now - 604800)
           vAddr->push_back(addr);
         if (vAddr->size() > 1000) {doneAfter = 1; return true; }
+      }
+      return true;
+    }
+
+    if (strCommand == "inv") {
+      // Our version message asks peers not to relay transactions to us (fRelay = 0). Like Bitcoin
+      // Core in blocks-only mode, disconnect peers that announce transactions anyway. As we don't
+      // negotiate wtxidrelay, MSG_WTX announcements are ignored, as Bitcoin Core does.
+      uint64_t nCount = ReadCompactSize(vRecv);
+      if (nCount > MAX_INV_SIZE) {
+        // Disconnect before deserializing the entries.
+        return false;
+      }
+      for (uint64_t i = 0; i < nCount; i++) {
+        uint32_t type;
+        uint256 hash;
+        vRecv >> type >> hash;
+        if (type == MSG_TX || type == MSG_WITNESS_TX) return false;
       }
       return true;
     }
