@@ -90,10 +90,25 @@ class CAddress : public CService
 
         void Init();
 
-        // Serialization as used in addr messages.
+        //! Serialization parameters for addr messages (V1) and addrv2 messages (V2, BIP155).
+        static constexpr CNetAddr::SerParams V1_NETWORK{CNetAddr::Encoding::V1};
+        static constexpr CNetAddr::SerParams V2_NETWORK{CNetAddr::Encoding::V2};
+
+        // Serialization as used in addr and addrv2 messages.
         SERIALIZE_METHODS(CAddress, obj)
         {
-            READWRITE(obj.nTime, obj.nServices, AsBase<CService>(obj));
+            const bool use_v2 = SER_PARAMS(CNetAddr::SerParams).enc == CNetAddr::Encoding::V2;
+            READWRITE(obj.nTime);
+            // nServices is serialized as CompactSize in V2; as uint64_t in V1.
+            if (use_v2) {
+                uint64_t services_tmp;
+                SER_WRITE(obj, services_tmp = obj.nServices);
+                READWRITE(Using<CompactSizeFormatter<false>>(services_tmp));
+                SER_READ(obj, obj.nServices = services_tmp);
+            } else {
+                READWRITE(obj.nServices);
+            }
+            READWRITE(AsBase<CService>(obj));
         }
 
         void print() const;

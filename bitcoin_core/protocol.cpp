@@ -97,5 +97,5 @@ void CAddress::Init()
 
 void CAddress::print() const
 {
-    printf("CAddress(%s)\n", ToString().c_str());
+    printf("CAddress(%s)\n", ToStringAddrPort().c_str());
 }

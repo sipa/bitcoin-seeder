@@ -495,7 +495,7 @@ extern "C" void* ThreadDumper(void*) {
       double stat[5]={0,0,0,0,0};
       for (vector<CAddrReport>::const_iterator it = v.begin(); it < v.end(); it++) {
         CAddrReport rep = *it;
-        if (d) fprintf(d, "%-47s  %4d  %11" PRId64 "  %6.2f%% %6.2f%% %6.2f%% %6.2f%% %6.2f%%  %6i  %08" PRIx64 "  %5i \"%s\"\n", rep.ip.ToString().c_str(), (int)rep.fGood, rep.lastSuccess, 100.0*rep.uptime[0], 100.0*rep.uptime[1], 100.0*rep.uptime[2], 100.0*rep.uptime[3], 100.0*rep.uptime[4], rep.blocks, rep.services, rep.clientVersion, SanitizeString(rep.clientSubVersion).c_str());
+        if (d) fprintf(d, "%-47s  %4d  %11" PRId64 "  %6.2f%% %6.2f%% %6.2f%% %6.2f%% %6.2f%%  %6i  %08" PRIx64 "  %5i \"%s\"\n", rep.ip.ToStringAddrPort().c_str(), (int)rep.fGood, rep.lastSuccess, 100.0*rep.uptime[0], 100.0*rep.uptime[1], 100.0*rep.uptime[2], 100.0*rep.uptime[3], 100.0*rep.uptime[4], rep.blocks, rep.services, rep.clientVersion, SanitizeString(rep.clientSubVersion).c_str());
         stat[0] += rep.uptime[0];
         stat[1] += rep.uptime[1];
         stat[2] += rep.uptime[2];
@@ -630,7 +630,7 @@ static std::string BuildZone(const ZoneExportConfig& cfg, uint32_t serial) {
       std::shuffle(addrs->begin(), addrs->end(), rng);
       if (addrs->size() > max) addrs->resize(max);
       for (const CNetAddr& ip : *addrs) {
-        zone += strprintf("%s IN %s %s\n", name.c_str(), ip.IsIPv4() ? "A" : "AAAA", ip.ToStringIP().c_str());
+        zone += strprintf("%s IN %s %s\n", name.c_str(), ip.IsIPv4() ? "A" : "AAAA", ip.ToStringAddr().c_str());
         any = true;
       }
     }
@@ -764,7 +764,8 @@ extern "C" void* ThreadSeeder(void*) {
   for (const string& seed: vSeeds) {
     size_t len = seed.size();
     if (len > 6 && !seed.compare(len - 6, 6, ".onion")) {
-      db.Add(CService(seed.c_str(), GetDefaultPort()), true);
+      CService service;
+      if (Lookup(seed.c_str(), service, GetDefaultPort(), false)) db.Add(service, true);
     } else {
       vDnsSeeds.push_back(seed);
     }
@@ -796,23 +797,23 @@ int main(int argc, char **argv) {
   }
   printf("\n");
   if (opts.tor) {
-    CService service(opts.tor, 9050);
-    if (service.IsValid()) {
-      printf("Using Tor proxy at %s\n", service.ToStringIPPort().c_str());
-      SetProxy(NET_TOR, service);
+    CService service;
+    if (LookupNumeric(opts.tor, service, 9050) && service.IsValid()) {
+      printf("Using Tor proxy at %s\n", service.ToStringAddrPort().c_str());
+      SetProxy(NET_ONION, service);
     }
   }
   if (opts.ipv4_proxy) {
-    CService service(opts.ipv4_proxy, 9050);
-    if (service.IsValid()) {
-      printf("Using IPv4 proxy at %s\n", service.ToStringIPPort().c_str());
+    CService service;
+    if (LookupNumeric(opts.ipv4_proxy, service, 9050) && service.IsValid()) {
+      printf("Using IPv4 proxy at %s\n", service.ToStringAddrPort().c_str());
       SetProxy(NET_IPV4, service);
     }
   }
   if (opts.ipv6_proxy) {
-    CService service(opts.ipv6_proxy, 9050);
-    if (service.IsValid()) {
-      printf("Using IPv6 proxy at %s\n", service.ToStringIPPort().c_str());
+    CService service;
+    if (LookupNumeric(opts.ipv6_proxy, service, 9050) && service.IsValid()) {
+      printf("Using IPv6 proxy at %s\n", service.ToStringAddrPort().c_str());
       SetProxy(NET_IPV6, service);
     }
   }

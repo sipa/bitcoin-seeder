@@ -97,8 +97,8 @@ class CNode {
     string ver = "/bitcoin-seeder:0.01/";
     uint8_t fRelayTxs = 0;
     // The addresses in a version message are serialized as services + CService (without time).
-    PushMessage("version", PROTOCOL_VERSION, nLocalServices, nTime, you.nServices, static_cast<const CService&>(you),
-                uint64_t{NODE_NETWORK}, CService("0.0.0.0"), nLocalNonce, ver, nBestHeight, fRelayTxs);
+    PushMessage("version", PROTOCOL_VERSION, nLocalServices, nTime, you.nServices, CNetAddr::V1(static_cast<const CService&>(you)),
+                uint64_t{NODE_NETWORK}, CNetAddr::V1(CService()), nLocalNonce, ver, nBestHeight, fRelayTxs);
   }
  
   void GotVersion() {
@@ -132,13 +132,13 @@ class CNode {
       uint64_t nServicesMe, nServicesFrom;
       CService addrMe, addrFrom;
       uint64_t nNonce = 1;
-      vRecv >> nVersion >> you.nServices >> nTime >> nServicesMe >> addrMe;
+      vRecv >> nVersion >> you.nServices >> nTime >> nServicesMe >> CNetAddr::V1(addrMe);
       if (nVersion < MIN_PEER_PROTO_VERSION) {
         // Such old peers use message formats we don't support, and don't support getheaders.
         return false;
       }
       if (!vRecv.empty())
-        vRecv >> nServicesFrom >> addrFrom >> nNonce;
+        vRecv >> nServicesFrom >> CNetAddr::V1(addrFrom) >> nNonce;
       if (!vRecv.empty()) {
         vRecv >> LIMITED_STRING(strSubVer, 256);
         strSubVer = SanitizeString(strSubVer);
@@ -177,7 +177,7 @@ class CNode {
       vAddrNew.reserve(nCount);
       for (uint64_t i = 0; i < nCount; i++) {
         CAddress addr;
-        vRecv >> addr;
+        vRecv >> CAddress::V1_NETWORK(addr);
         vAddrNew.push_back(addr);
       }
       if (!vAddr) return true;

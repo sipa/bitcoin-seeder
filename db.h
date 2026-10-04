@@ -22,7 +22,7 @@ static inline int GetRequireHeight(const bool testnet = fTestNet)
 }
 
 std::string static inline ToString(const CService &ip) {
-  std::string str = ip.ToString();
+  std::string str = ip.ToStringAddrPort();
   while (str.size() < 22) str += ' ';
   return str;
 }
@@ -137,7 +137,7 @@ public:
   
   SERIALIZE_METHODS(CAddrInfo, obj) {
     uint8_t version = 4;
-    READWRITE(version, obj.ip, obj.services, obj.lastTry);
+    READWRITE(version, CNetAddr::V1(obj.ip), obj.services, obj.lastTry);
     uint8_t tried = obj.ourLastTry != 0;
     READWRITE(tried);
     if (tried) {
@@ -257,7 +257,7 @@ public:
       s << n;
       for (int id : ourId) s << idToInfo.at(id);
       for (int id : unkId) s << idToInfo.at(id);
-      s << banned;
+      s << CNetAddr::V1(banned);
     }
   }
 
@@ -285,7 +285,7 @@ public:
         }
       }
       nDirty++;
-      s >> banned;
+      s >> CNetAddr::V1(banned);
     }
   }
 
