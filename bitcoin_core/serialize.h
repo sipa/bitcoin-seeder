@@ -10,6 +10,7 @@
 
 #include <attributes.h>
 #include <compat/endian.h>
+#include <prevector.h>
 #include <span.h>
 
 #include <algorithm>
@@ -529,6 +530,12 @@ template<typename Stream, typename C> void Serialize(Stream& os, const std::basi
 template<typename Stream, typename C> void Unserialize(Stream& is, std::basic_string_view<C>& str) = delete;
 
 /**
+ * prevector
+ */
+template<typename Stream, unsigned int N, typename T> inline void Serialize(Stream& os, const prevector<N, T>& v);
+template<typename Stream, unsigned int N, typename T> inline void Unserialize(Stream& is, prevector<N, T>& v);
+
+/**
  * vector
  */
 template<typename Stream, typename T, typename A> inline void Serialize(Stream& os, const std::vector<T, A>& v);
@@ -620,6 +627,41 @@ void Serialize(Stream& os, const std::basic_string_view<C>& str)
         os.write(MakeByteSpan(str));
     }
 }
+
+/**
+ * prevector
+ */
+template <typename Stream, unsigned int N, typename T>
+void Serialize(Stream& os, const prevector<N, T>& v)
+{
+    if constexpr (BasicByte<T>) { // Use optimized version for unformatted basic bytes
+        WriteCompactSize(os, v.size());
+        if (!v.empty()) os.write(MakeByteSpan(v));
+    } else {
+        Serialize(os, Using<VectorFormatter<DefaultFormatter>>(v));
+    }
+}
+
+
+template <typename Stream, unsigned int N, typename T>
+void Unserialize(Stream& is, prevector<N, T>& v)
+{
+    if constexpr (BasicByte<T>) { // Use optimized version for unformatted basic bytes
+        // Limit size per read so bogus size value won't cause out of memory
+        v.clear();
+        unsigned int nSize = ReadCompactSize(is);
+        unsigned int i = 0;
+        while (i < nSize) {
+            unsigned int blk = std::min(nSize - i, (unsigned int)(1 + 4999999 / sizeof(T)));
+            v.resize_uninitialized(i + blk);
+            is.read(std::as_writable_bytes(std::span{&v[i], blk}));
+            i += blk;
+        }
+    } else {
+        Unserialize(is, Using<VectorFormatter<DefaultFormatter>>(v));
+    }
+}
+
 
 /**
  * vector
