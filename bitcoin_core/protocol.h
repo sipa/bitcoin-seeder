@@ -17,6 +17,9 @@
 
 static const int PROTOCOL_VERSION = 60000;
 
+//! disconnect from peers older than this proto version
+static const int MIN_PEER_PROTO_VERSION = 31800;
+
 extern bool fTestNet;
 extern unsigned short nDefaultP2Port;
 static inline unsigned short GetDefaultPort(const bool testnet = fTestNet)

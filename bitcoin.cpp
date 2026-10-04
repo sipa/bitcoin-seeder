@@ -126,14 +126,17 @@ class CNode {
       CService addrMe, addrFrom;
       uint64_t nNonce = 1;
       vRecv >> nVersion >> you.nServices >> nTime >> nServicesMe >> addrMe;
-      if (nVersion == 10300) nVersion = 300;
-      if (nVersion >= 106 && !vRecv.empty())
+      if (nVersion < MIN_PEER_PROTO_VERSION) {
+        // Such old peers use message formats we don't support, and don't support getheaders.
+        return false;
+      }
+      if (!vRecv.empty())
         vRecv >> nServicesFrom >> addrFrom >> nNonce;
-      if (nVersion >= 106 && !vRecv.empty()) {
+      if (!vRecv.empty()) {
         vRecv >> LIMITED_STRING(strSubVer, 256);
         strSubVer = SanitizeString(strSubVer);
       }
-      if (nVersion >= 209 && !vRecv.empty())
+      if (!vRecv.empty())
         vRecv >> nStartingHeight;
       fGotVersion = true;
       PushMessage("verack");
