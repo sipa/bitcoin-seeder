@@ -109,10 +109,12 @@ class CNode {
     }
   }
 
+  // Process a received message. Returns false if the peer misbehaved (in which case the caller
+  // disconnects it).
   bool ProcessMessage(string strCommand, DataStream& vRecv) {
     if (strCommand == "version") {
       if (fGotVersion) {
-        return false;
+        return true;
       }
       int64_t nTime;
       uint64_t nServicesMe, nServicesFrom;
@@ -128,24 +130,24 @@ class CNode {
         vRecv >> nStartingHeight;
       fGotVersion = true;
       PushMessage("verack");
-      return false;
+      return true;
     }
 
     if (!fGotVersion) {
-      return false;
+      return true;
     }
     
     if (strCommand == "verack") {
       if (fGotVerAck) {
-        return false;
+        return true;
       }
       fGotVerAck = true;
       GotVersion();
-      return false;
+      return true;
     }
 
     if (!fGotVerAck) {
-      return false;
+      return true;
     }
 
     if (strCommand == "addr" && vAddr) {
@@ -166,7 +168,7 @@ class CNode {
           vAddr->push_back(addr);
         if (vAddr->size() > 1000) {doneAfter = 1; return true; }
       }
-      return false;
+      return true;
     }
 
     if (strCommand == "headers" && fWaitKnownBlock) {
@@ -180,16 +182,12 @@ class CNode {
         ReadCompactSize(vRecv); // Number of transactions (always 0).
         fMatch = Hash(header) == hashKnownBlock;
       }
-      if (!fMatch) {
-        close(sock);
-        sock = INVALID_SOCKET;
-        return true;
-      }
+      if (!fMatch) return false;
       MaybeDone(time(NULL));
-      return false;
+      return true;
     }
 
-    return false;
+    return true;
   }
   
   bool ProcessMessages() {
@@ -228,19 +226,41 @@ class CNode {
       }
       DataStream vMsg{payload};
       vRecv.erase(vRecv.begin(), vRecv.begin() + nHeaderSize + nMessageSize);
-      if (ProcessMessage(strCommand, vMsg))
+      bool success;
+      try {
+        success = ProcessMessage(strCommand, vMsg);
+      } catch (const std::ios_base::failure&) {
+        // The message could not be deserialized.
+        success = false;
+      }
+      if (!success) {
+        close(sock);
+        sock = INVALID_SOCKET;
         return true;
+      }
+      if (doneAfter == 1) {
+        // Enough addresses were received; ignore any further messages.
+        return true;
+      }
     } while(1);
     return false;
   }
   
 public:
-  CNode(const CService& ip, vector<CAddress>* vAddrIn) : you(ip), vAddr(vAddrIn), ban(0), doneAfter(0), nVersion(0), nStartingHeight(0) {
+  CNode(const CService& ip, vector<CAddress>* vAddrIn) : sock(INVALID_SOCKET), you(ip), vAddr(vAddrIn), ban(0), doneAfter(0), nVersion(0), nStartingHeight(0) {
     fGotVersion = false;
     fGotVerAck = false;
     fGotAddr = false;
     fWaitKnownBlock = false;
   }
+  CNode(const CNode&) = delete;
+  CNode& operator=(const CNode&) = delete;
+
+  ~CNode() {
+    // Make sure the socket is closed, also if processing was aborted (e.g. by an exception).
+    if (sock != INVALID_SOCKET) close(sock);
+  }
+
   bool Run() {
     bool res = true;
     const int64_t start = time(NULL);
