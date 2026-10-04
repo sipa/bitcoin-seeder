@@ -66,7 +66,7 @@ int CAddrDb::Lookup_(const CService &ip) {
   return -1;
 }
 
-void CAddrDb::Good_(const CService &addr, int clientV, std::string clientSV, int blocks, uint64_t services) {
+void CAddrDb::Good_(const CService &addr, int clientV, std::string clientSV, int blocks, uint64_t services, bool httpChecked, bool httpExcluded) {
   int id = Lookup_(addr);
   if (id == -1) return;
   unkId.erase(id);
@@ -76,6 +76,10 @@ void CAddrDb::Good_(const CService &addr, int clientV, std::string clientSV, int
   info.clientSubVersion = clientSV;
   info.blocks = blocks;
   info.services = services;
+  if (httpChecked) {
+    info.httpCheckTime = time(NULL);
+    info.httpExcluded = httpExcluded;
+  }
   info.Update(true);
   if (info.IsGood() && goodId.count(id)==0) {
     goodId.insert(id);
@@ -156,8 +160,11 @@ void CAddrDb::Add_(const CAddress &addr, bool force) {
 
 void CAddrDb::GetIPs_(set<CNetAddr>& ips, uint64_t requestedFlags, int max, const bool* nets) {
   std::vector<int> goodIdFiltered;
+  const int64_t now = time(NULL);
   for (std::set<int>::const_iterator it = goodId.begin(); it != goodId.end(); it++) {
-    if ((idToInfo[*it].services & requestedFlags) == requestedFlags)
+    const CAddrInfo& info = idToInfo[*it];
+    if ((!filterHttp || (info.HasRecentHttpCheck(now) && !info.httpExcluded)) &&
+        (info.services & requestedFlags) == requestedFlags)
       goodIdFiltered.push_back(*it);
   }
 

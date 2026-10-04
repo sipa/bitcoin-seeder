@@ -23,6 +23,7 @@
 #include "db.h"
 #include "streams.h"
 #include "util/strencodings.h"
+#include "http_filter.h"
 
 using namespace std;
 
@@ -52,6 +53,7 @@ public:
   std::string zonefile;
   std::string zoneReload;
   int nZoneInterval;
+  int fFilterHttp;
   const char *mbox;
   const char *ns;
   const char *host;
@@ -64,7 +66,7 @@ public:
   std::vector<string> vSeeds;
   std::set<uint64_t> filter_whitelist;
 
-  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), nP2Port(0), nMinimumHeight(0), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false), fNoDNS(false), nZoneInterval(120), ipv4_proxy(NULL), ipv6_proxy(NULL), magic(NULL), knownblock(NULL) {}
+  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), nP2Port(0), nMinimumHeight(0), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false), fNoDNS(false), nZoneInterval(120), fFilterHttp(false), ipv4_proxy(NULL), ipv6_proxy(NULL), magic(NULL), knownblock(NULL) {}
 
   void ParseCommandLine(int argc, char **argv) {
     static const char *help = "Bitcoin-seeder\n"
@@ -95,6 +97,7 @@ public:
                               "--zone-interval <secs>  Interval between zone file exports, and TTL of the addresses (10-86400, default 120)\n"
                               "--zone-reload <command> Command to run after each zone file export (e.g. \"rndc reload <host>\");\n"
                               "                        it is killed if it takes longer than 60 seconds (or the interval)\n"
+                              "--filter-http   Exclude IPs accepting TCP connections on port 80 or 443 from DNS answers\n"
                               "-?, --help      Show this text\n"
                               "\n";
     bool showHelp = false;
@@ -125,6 +128,7 @@ public:
         {"zonefile", required_argument, 0, 'Z'},
         {"zone-interval", required_argument, 0, 'I'},
         {"zone-reload", required_argument, 0, 'R'},
+        {"filter-http", no_argument, &fFilterHttp, 1},
         {"help", no_argument, 0, 'H'},
         {0, 0, 0, 0}
       };
@@ -309,7 +313,7 @@ public:
 CAddrDb db;
 
 extern "C" void* ThreadCrawler(void* data) {
-  int *nThreads=(int*)data;
+  CDnsSeedOpts *opts=(CDnsSeedOpts*)data;
   do {
     std::vector<CServiceResult> ips;
     int wait = 5;
@@ -317,7 +321,7 @@ extern "C" void* ThreadCrawler(void* data) {
     int64_t now = time(NULL);
     if (ips.empty()) {
       wait *= 1000;
-      wait += rand() % (500 * *nThreads);
+      wait += rand() % (500 * opts->nThreads);
       Sleep(wait);
       continue;
     }
@@ -331,6 +335,10 @@ extern "C" void* ThreadCrawler(void* data) {
       res.services = 0;
       bool getaddr = res.ourLastSuccess + 86400 < now;
       res.fGood = TestNode(res.service,res.nBanTime,res.nClientV,res.strClientV,res.nHeight,getaddr ? &addr : NULL, res.services);
+      if (opts->fFilterHttp && res.fGood && (res.service.IsIPv4() || res.service.IsIPv6())) {
+        res.httpExcluded = MayHaveHttpPort(res.service);
+        res.httpChecked = true;
+      }
     }
     db.ResultMany(ips);
     db.Add(addr);
@@ -540,7 +548,7 @@ extern "C" void* ThreadStats(void*) {
       requests += dnsThread[i]->dns_opt.nRequests;
       queries += dnsThread[i]->dbQueries;
     }
-    printf("%s %i/%i available (%i tried in %is, %i new, %i active), %i banned; %llu DNS requests, %llu db queries", c, stats.nGood, stats.nAvail, stats.nTracked, stats.nAge, stats.nNew, stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned, (unsigned long long)requests, (unsigned long long)queries);
+    printf("%s %i/%i available (%i tried in %is, %i new, %i active), %i banned; %i web-port excluded, %i web-port pending; %llu DNS requests, %llu db queries", c, stats.nGood, stats.nAvail, stats.nTracked, stats.nAge, stats.nNew, stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned, stats.nHttpExcluded, stats.nHttpPending, (unsigned long long)requests, (unsigned long long)queries);
     Sleep(1000);
   } while(1);
   return nullptr;
@@ -791,6 +799,7 @@ int main(int argc, char **argv) {
   setbuf(stdout, NULL);
   CDnsSeedOpts opts;
   opts.ParseCommandLine(argc, argv);
+  db.SetFilterHttp(opts.fFilterHttp);
   printf("Supporting whitelisted filters: ");
   for (std::set<uint64_t>::const_iterator it = opts.filter_whitelist.begin(); it != opts.filter_whitelist.end(); it++) {
       if (it != opts.filter_whitelist.begin()) {
@@ -799,6 +808,7 @@ int main(int argc, char **argv) {
       printf("0x%lx", (unsigned long)*it);
   }
   printf("\n");
+  if (opts.fFilterHttp) printf("Filtering DNS peers with TCP port 80 or 443 open\n");
   if (opts.tor) {
     CService service(opts.tor, 9050);
     if (service.IsValid()) {
@@ -917,7 +927,7 @@ int main(int argc, char **argv) {
   pthread_attr_setstacksize(&attr_crawler, 0x20000);
   for (int i=0; i<opts.nThreads; i++) {
     pthread_t thread;
-    pthread_create(&thread, &attr_crawler, ThreadCrawler, &opts.nThreads);
+    pthread_create(&thread, &attr_crawler, ThreadCrawler, &opts);
   }
   pthread_attr_destroy(&attr_crawler);
   printf("done\n");

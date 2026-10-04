@@ -38,9 +38,9 @@ static void CheckLoopback(int family) {
   assert(bind(listener, reinterpret_cast<struct sockaddr*>(&address), addressLength) == 0);
   assert(getsockname(listener, reinterpret_cast<struct sockaddr*>(&address), &addressLength) == 0);
   assert(listen(listener, 1) == 0);
-  assert(TcpPortOpen(reinterpret_cast<struct sockaddr*>(&address), addressLength, 500));
+  assert(TcpPortMayBeOpen(reinterpret_cast<struct sockaddr*>(&address), addressLength, 500));
   close(listener);
-  assert(!TcpPortOpen(reinterpret_cast<struct sockaddr*>(&address), addressLength, 500));
+  assert(!TcpPortMayBeOpen(reinterpret_cast<struct sockaddr*>(&address), addressLength, 500));
 }
 
 static void CheckSocks5(bool acceptConnection, bool stall) {
@@ -81,9 +81,9 @@ static void CheckSocks5(bool acceptConnection, bool stall) {
     close(client);
   });
 
-  const bool open = TcpPortOpenViaSocks5(reinterpret_cast<struct sockaddr*>(&proxy), proxyLength,
-                                         "198.51.100.7", 443, stall ? 100 : 1000);
-  assert(open == (acceptConnection && !stall));
+  const bool mayBeOpen = TcpPortMayBeOpenViaSocks5(reinterpret_cast<struct sockaddr*>(&proxy), proxyLength,
+                                                    "198.51.100.7", 443, stall ? 100 : 1000);
+  assert(mayBeOpen == (acceptConnection || stall));
   server.join();
   close(listener);
 }
@@ -94,5 +94,10 @@ int main() {
   CheckSocks5(true, false);
   CheckSocks5(false, false);
   CheckSocks5(false, true);
+  struct sockaddr_in missingProxy = {};
+  missingProxy.sin_family = AF_INET;
+  missingProxy.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  assert(TcpPortMayBeOpenViaSocks5(reinterpret_cast<struct sockaddr*>(&missingProxy), sizeof(missingProxy),
+                                    "198.51.100.7", 443, 500));
   puts("HTTP port probe: direct IPv4/IPv6 and SOCKS5 checks passed");
 }

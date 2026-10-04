@@ -1,3 +1,6 @@
 *.o
 dnsseed*
+test-http-probe
+test-http-filter
+test-http-proxy-route
 dnsstats.log
