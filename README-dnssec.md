@@ -66,12 +66,17 @@ settings:
 
 ```conf
 recursion no;
+minimal-responses yes;
 allow-query { any; };
 allow-transfer { none; };
 querylog no;
 listen-on { any; };
 listen-on-v6 { any; };
 ```
+
+`minimal-responses yes` stops BIND from adding the zone's NS records to
+answers for resolvers, which would make answers with the maximum number of
+addresses (see below) too large for resolvers that don't use EDNS.
 
 Keep the `seeder` user out of the `bind` group: members can read
 `/etc/bind/rndc.key` and administer BIND with `rndc`. Instead, give the
@@ -255,7 +260,8 @@ resolver, unless `options edns0` is set), or use it with a 512-byte buffer.
 Larger answers make those clients retry over TCP, and their lookup fails
 entirely if that doesn't work (glibc doesn't use the truncated answer).
 Between resolvers and BIND, EDNS is used, and signed answers fit in the usual
-1232-byte buffer.
+1232-byte buffer; clients that request signatures with a smaller buffer still
+need TCP.
 
 The TTL of the records is the export interval. Unlike with the built-in DNS
 server, which selects addresses for every query, all clients get the same
@@ -311,20 +317,30 @@ runuser -u seeder -- /usr/bin/sudo -n /usr/sbin/rndc -k /etc/bind/rndc.key -s 12
 
 Both permission checks and the reload command should exit successfully.
 
+Check that address answers fit in 512 bytes without EDNS (`+ignore` stops
+`dig` from silently retrying over TCP):
+
+```sh
+dig @127.0.0.1 dnsseed.example.com A +noedns +norecurse +ignore
+dig @127.0.0.1 dnsseed.example.com AAAA +noedns +norecurse +ignore
+```
+
+Expect the addresses, and no `tc` flag.
+
 Check local authoritative answers over UDP and TCP:
 
 ```sh
 dig @127.0.0.1 dnsseed.example.com SOA +dnssec +norecurse
-dig @127.0.0.1 dnsseed.example.com A +dnssec +norecurse
-dig @127.0.0.1 dnsseed.example.com AAAA +dnssec +norecurse
-dig @127.0.0.1 x49.dnsseed.example.com A +dnssec +norecurse
+dig @127.0.0.1 dnsseed.example.com A +dnssec +norecurse +ignore
+dig @127.0.0.1 dnsseed.example.com AAAA +dnssec +norecurse +ignore
+dig @127.0.0.1 x49.dnsseed.example.com A +dnssec +norecurse +ignore
 dig @127.0.0.1 x49.dnsseed.example.com AAAA +dnssec +norecurse +tcp
 ```
 
-Expect `status: NOERROR` and the `aa` flag. Nonempty address answers should
-include their RRSIG. Empty answers should include signed denial records in
-the authority section. An RRSIG proves that signatures are being served;
-validation also requires the parent DS chain.
+Expect `status: NOERROR` and the `aa` flag, and no `tc` flag. Nonempty
+address answers should include their RRSIG. Empty answers should include
+signed denial records in the authority section. An RRSIG proves that
+signatures are being served; validation also requires the parent DS chain.
 
 After publishing the NS and DS records and allowing caches to expire, test
 with a validating resolver:
