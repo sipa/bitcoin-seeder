@@ -36,6 +36,13 @@
 #define EDNS_UDP_SIZE BUFLEN
 #define OPT_SIZE 11
 
+// Maximum size of UDP responses up to and including their answer section.
+// Resolvers cache the addresses in our answers, and pass them on to their own
+// clients. Leave room for an OPT record with a DNS cookie (11 + 44 bytes), so
+// that they also fit in 512 bytes for clients that use EDNS with that buffer
+// size (larger answers make clients retry over TCP).
+#define UDP_ANSWER_SIZE (BUFLEN - 55)
+
 // Maximum number of simultaneous TCP connections, and the number of seconds a
 // TCP connection may take to send each complete request.
 #define TCP_MAX_CONNECTIONS 64
@@ -392,8 +399,9 @@ static ssize_t add_opt(unsigned char* outbuf, ssize_t len, bool edns, int ext_rc
 }
 
 // Handle the request in inbuf, writing a response of at most outsize bytes to
-// outbuf. Returns the size of the response, or -1 if there is none.
-ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insize, unsigned char* outbuf, size_t outsize) {
+// outbuf, with addresses only up to answersize bytes. Returns the size of the
+// response, or -1 if there is none.
+ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insize, unsigned char* outbuf, size_t outsize, size_t answersize) {
   if (insize < 12) // DNS header
     return -1;
   // copy id
@@ -502,13 +510,15 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
     addr_t addr[MAX_ADDRS];
     int maxaddr = outsize / 16 < MAX_ADDRS ? outsize / 16 : MAX_ADDRS;
     int naddr = opt->cb((void*)opt, name, addr, maxaddr, typ == TYPE_A, typ == TYPE_AAAA);
+    unsigned char *addrend = outend - max_auth_size;
+    if (addrend > outbuf + answersize) addrend = outbuf + answersize;
     int n = 0;
     while (n < naddr) {
       int ret = 1;
       if (addr[n].v == 4)
-         ret = write_record_a(&outpos, outend - max_auth_size, "", offset, CLASS_IN, opt->datattl, &addr[n]);
+         ret = write_record_a(&outpos, addrend, "", offset, CLASS_IN, opt->datattl, &addr[n]);
       else if (addr[n].v == 6)
-         ret = write_record_aaaa(&outpos, outend - max_auth_size, "", offset, CLASS_IN, opt->datattl, &addr[n]);
+         ret = write_record_aaaa(&outpos, addrend, "", offset, CLASS_IN, opt->datattl, &addr[n]);
       if (!ret) {
         n++;
         outbuf[7]++;
@@ -656,7 +666,7 @@ int dnsserver_tcp(dns_opt_t *opt) {
             break;
           }
           if (conn->len < 2 + msglen) break;
-          ssize_t ret = dnshandle(opt, conn->buf + 2, msglen, outbuf + 2, TCP_BUFLEN);
+          ssize_t ret = dnshandle(opt, conn->buf + 2, msglen, outbuf + 2, TCP_BUFLEN, TCP_BUFLEN);
           ++(opt->nRequests);
           if (ret <= 0) {
             close_conn = true;
@@ -723,7 +733,7 @@ int dnsserver(dns_opt_t *opt) {
     if (insize <= 0)
       continue;
 
-    ssize_t ret = dnshandle(opt, inbuf, insize, outbuf, BUFLEN);
+    ssize_t ret = dnshandle(opt, inbuf, insize, outbuf, BUFLEN, UDP_ANSWER_SIZE);
     if (ret <= 0)
       continue;
 
