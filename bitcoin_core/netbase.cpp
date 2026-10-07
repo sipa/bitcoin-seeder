@@ -8,6 +8,9 @@
 
 #ifndef WIN32
 #include <sys/fcntl.h>
+#include <poll.h>
+#include <errno.h>
+#include <time.h>
 #endif
 
 #include <boost/algorithm/string/case_conv.hpp> // for to_lower()
@@ -161,7 +164,28 @@ bool LookupNumeric(const char *pszName, CService& addr, int portDefault)
     return Lookup(pszName, addr, portDefault, false);
 }
 
-bool static Socks4(const CService &addrDest, SOCKET& hSocket)
+/** Receive exactly len bytes from a (blocking) socket, waiting at most until nDeadline (a time(NULL)
+ *  value; 0 means no deadline). Returns whether all bytes were received. */
+bool static RecvExact(SOCKET hSocket, char *data, size_t len, int64_t nDeadline)
+{
+    while (len > 0) {
+        if (nDeadline) {
+            int64_t nRemaining = nDeadline - time(NULL);
+            if (nRemaining <= 0) return false;
+            struct pollfd pfd = {(int)hSocket, POLLIN, 0};
+            int ret = poll(&pfd, 1, nRemaining * 1000);
+            if (ret < 0 && errno == EINTR) continue;
+            if (ret <= 0) return false;
+        }
+        ssize_t ret = recv(hSocket, data, len, 0);
+        if (ret <= 0) return false;
+        data += ret;
+        len -= ret;
+    }
+    return true;
+}
+
+bool static Socks4(const CService &addrDest, SOCKET& hSocket, int64_t nDeadline)
 {
     printf("SOCKS4 connecting %s\n", addrDest.ToString().c_str());
     if (!addrDest.IsIPv4())
@@ -189,7 +213,7 @@ bool static Socks4(const CService &addrDest, SOCKET& hSocket)
         return error("Error sending to proxy");
     }
     char pchRet[8];
-    if (recv(hSocket, pchRet, 8, 0) != 8)
+    if (!RecvExact(hSocket, pchRet, 8, nDeadline))
     {
         closesocket(hSocket);
         return error("Error reading proxy response");
@@ -205,7 +229,7 @@ bool static Socks4(const CService &addrDest, SOCKET& hSocket)
     return true;
 }
 
-bool static Socks5(string strDest, int port, SOCKET& hSocket)
+bool static Socks5(string strDest, int port, SOCKET& hSocket, int64_t nDeadline)
 {
     printf("SOCKS5 connecting %s\n", strDest.c_str());
     if (strDest.size() > 255)
@@ -224,7 +248,7 @@ bool static Socks5(string strDest, int port, SOCKET& hSocket)
         return error("Error sending to proxy");
     }
     char pchRet1[2];
-    if (recv(hSocket, pchRet1, 2, 0) != 2)
+    if (!RecvExact(hSocket, pchRet1, 2, nDeadline))
     {
         closesocket(hSocket);
         return error("Error reading proxy response");
@@ -247,7 +271,7 @@ bool static Socks5(string strDest, int port, SOCKET& hSocket)
         return error("Error sending to proxy");
     }
     char pchRet2[4];
-    if (recv(hSocket, pchRet2, 4, 0) != 4)
+    if (!RecvExact(hSocket, pchRet2, 4, nDeadline))
     {
         closesocket(hSocket);
         return error("Error reading proxy response");
@@ -281,15 +305,15 @@ bool static Socks5(string strDest, int port, SOCKET& hSocket)
     char pchRet3[256];
     switch (pchRet2[3])
     {
-        case 0x01: ret = recv(hSocket, pchRet3, 4, 0) != 4; break;
-        case 0x04: ret = recv(hSocket, pchRet3, 16, 0) != 16; break;
+        case 0x01: ret = !RecvExact(hSocket, pchRet3, 4, nDeadline); break;
+        case 0x04: ret = !RecvExact(hSocket, pchRet3, 16, nDeadline); break;
         case 0x03:
         {
-            ret = recv(hSocket, pchRet3, 1, 0) != 1;
+            ret = !RecvExact(hSocket, pchRet3, 1, nDeadline);
             if (ret)
-                return error("Error reading from proxy");
-            int nRecv = pchRet3[0];
-            ret = recv(hSocket, pchRet3, nRecv, 0) != nRecv;
+                break;
+            int nRecv = (unsigned char)pchRet3[0];
+            ret = !RecvExact(hSocket, pchRet3, nRecv, nDeadline);
             break;
         }
         default: closesocket(hSocket); return error("Error: malformed proxy response");
@@ -299,7 +323,7 @@ bool static Socks5(string strDest, int port, SOCKET& hSocket)
         closesocket(hSocket);
         return error("Error reading from proxy");
     }
-    if (recv(hSocket, pchRet3, 2, 0) != 2)
+    if (!RecvExact(hSocket, pchRet3, 2, nDeadline))
     {
         closesocket(hSocket);
         return error("Error reading from proxy");
@@ -452,7 +476,7 @@ bool IsProxy(const CNetAddr &addr) {
     return false;
 }
 
-bool ConnectSocket(const CService &addrDest, SOCKET& hSocketRet, int nTimeout)
+bool ConnectSocket(const CService &addrDest, SOCKET& hSocketRet, int nTimeout, int64_t nDeadline)
 {
     const proxyType &proxy = proxyInfo[addrDest.GetNetwork()];
 
@@ -469,11 +493,11 @@ bool ConnectSocket(const CService &addrDest, SOCKET& hSocketRet, int nTimeout)
     // do socks negotiation
     switch (proxy.second) {
     case 4:
-        if (!Socks4(addrDest, hSocket))
+        if (!Socks4(addrDest, hSocket, nDeadline))
             return false;
         break;
     case 5:
-        if (!Socks5(addrDest.ToStringIP(), addrDest.GetPort(), hSocket))
+        if (!Socks5(addrDest.ToStringIP(), addrDest.GetPort(), hSocket, nDeadline))
             return false;
         break;
     default:
@@ -507,7 +531,7 @@ bool ConnectSocketByName(CService &addr, SOCKET& hSocketRet, const char *pszDest
         default:
         case 4: return false;
         case 5:
-            if (!Socks5(strDest, port, hSocket))
+            if (!Socks5(strDest, port, hSocket, 0))
                 return false;
             break;
     }

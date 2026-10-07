@@ -154,21 +154,7 @@ void CAddrDb::Add_(const CAddress &addr, bool force) {
   nDirty++;
 }
 
-void CAddrDb::GetIPs_(set<CNetAddr>& ips, uint64_t requestedFlags, int max, const bool* nets, bool fallback) {
-  if (goodId.size() == 0) {
-    if (!fallback) return;
-    int id = -1;
-    if (ourId.size() == 0) {
-      if (unkId.size() == 0) return;
-      id = *unkId.begin();
-    } else {
-      id = *ourId.begin();
-    }
-    if (id >= 0 && (idToInfo[id].services & requestedFlags) == requestedFlags) {
-      ips.insert(idToInfo[id].ip);
-    }
-    return;
-  }
+void CAddrDb::GetIPs_(set<CNetAddr>& ips, uint64_t requestedFlags, int max, const bool* nets) {
   std::vector<int> goodIdFiltered;
   for (std::set<int>::const_iterator it = goodId.begin(); it != goodId.end(); it++) {
     if ((idToInfo[*it].services & requestedFlags) == requestedFlags)

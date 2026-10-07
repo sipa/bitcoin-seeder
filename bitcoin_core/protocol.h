@@ -17,6 +17,9 @@
 
 static const int PROTOCOL_VERSION = 60000;
 
+//! disconnect from peers older than this proto version
+static const int MIN_PEER_PROTO_VERSION = 31800;
+
 extern bool fTestNet;
 extern unsigned short nDefaultP2Port;
 static inline unsigned short GetDefaultPort(const bool testnet = fTestNet)
@@ -66,6 +69,17 @@ enum
     NODE_COMPACT_FILTERS = (1 << 6),
     NODE_NETWORK_LIMITED = (1 << 10),
     NODE_P2P_V2 = (1 << 11),
+};
+
+/** getdata message type flags */
+inline constexpr uint32_t MSG_WITNESS_FLAG = 1 << 30;
+
+/** getdata / inv message types (the ones that can occur in inv messages). */
+enum GetDataMsg : uint32_t {
+    MSG_TX = 1,
+    MSG_BLOCK = 2,
+    MSG_WTX = 5,                                      //!< Defined in BIP 339
+    MSG_WITNESS_TX = MSG_TX | MSG_WITNESS_FLAG,       //!< Defined in BIP144
 };
 
 class CAddress : public CService
