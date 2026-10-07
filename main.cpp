@@ -47,7 +47,6 @@ public:
   int nDnsThreads;
   int fUseTestNet;
   int fWipeBan;
-  int fWipeIgnore;
   int fNoDNS;
   std::string zonefile;
   std::string zoneReload;
@@ -64,7 +63,7 @@ public:
   std::vector<string> vSeeds;
   std::set<uint64_t> filter_whitelist;
 
-  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), nP2Port(0), nMinimumHeight(0), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fWipeIgnore(false), fNoDNS(false), nZoneInterval(120), ipv4_proxy(NULL), ipv6_proxy(NULL), magic(NULL), knownblock(NULL) {}
+  CDnsSeedOpts() : nThreads(96), nDnsThreads(4), ip_addr("::"), nPort(53), nP2Port(0), nMinimumHeight(0), mbox(NULL), ns(NULL), host(NULL), tor(NULL), fUseTestNet(false), fWipeBan(false), fNoDNS(false), nZoneInterval(120), ipv4_proxy(NULL), ipv6_proxy(NULL), magic(NULL), knownblock(NULL) {}
 
   void ParseCommandLine(int argc, char **argv) {
     static const char *help = "Bitcoin-seeder\n"
@@ -89,7 +88,6 @@ public:
                               "--knownblock <hash> Hash of a block that good nodes must have\n"
                               "--testnet       Use testnet\n"
                               "--wipeban       Wipe list of banned nodes\n"
-                              "--wipeignore    Wipe list of ignored nodes\n"
                               "--nodns         Don't run the built-in DNS server\n"
                               "--zonefile <file>       Periodically export a DNS zone file with good nodes (requires -h, -n, -m)\n"
                               "--zone-interval <secs>  Interval between zone file exports, and TTL of the addresses (10-86400, default 120)\n"
@@ -120,7 +118,6 @@ public:
         {"knownblock", required_argument, 0, 'K'},
         {"testnet", no_argument, &fUseTestNet, 1},
         {"wipeban", no_argument, &fWipeBan, 1},
-        {"wipeignore", no_argument, &fWipeBan, 1},
         {"nodns", no_argument, &fNoDNS, 1},
         {"zonefile", required_argument, 0, 'Z'},
         {"zone-interval", required_argument, 0, 'I'},
@@ -886,8 +883,6 @@ int main(int argc, char **argv) {
     cf >> db;
     if (opts.fWipeBan)
         db.banned.clear();
-    if (opts.fWipeIgnore)
-        db.ResetIgnores();
     printf("done\n");
   }
   pthread_t threadDns, threadSeed, threadDump, threadStats, threadZone;
