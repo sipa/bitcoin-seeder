@@ -14,6 +14,7 @@
 #define MIN_RETRY 1000
 
 #define REQUIRE_VERSION 70001
+static const int64_t HTTP_CHECK_MAX_AGE = 7 * 24 * 60 * 60;
 
 extern int nMinimumHeight;
 static inline int GetRequireHeight(const bool testnet = fTestNet)
@@ -76,6 +77,9 @@ private:
   int64_t ourLastTry;
   int64_t ourLastSuccess;
   int64_t ignoreTill;
+  int64_t httpCheckTime;
+  // True if a web port is open or the probe was inconclusive; only false after both ports refuse.
+  bool httpExcluded;
   CAddrStat stat2H;
   CAddrStat stat8H;
   CAddrStat stat1D;
@@ -87,7 +91,11 @@ private:
   int success;
   std::string clientSubVersion;
 public:
-  CAddrInfo() : services(0), lastTry(0), ourLastTry(0), ourLastSuccess(0), ignoreTill(0), clientVersion(0), blocks(0), total(0), success(0) {}
+  CAddrInfo() : services(0), lastTry(0), ourLastTry(0), ourLastSuccess(0), ignoreTill(0), httpCheckTime(0), httpExcluded(false), clientVersion(0), blocks(0), total(0), success(0) {}
+
+  bool HasRecentHttpCheck(int64_t now) const {
+    return httpCheckTime > 0 && httpCheckTime <= now && now - httpCheckTime <= HTTP_CHECK_MAX_AGE;
+  }
   
   CAddrReport GetReport() const {
     CAddrReport ret;
@@ -145,7 +153,7 @@ public:
   friend class CAddrDb;
   
   SERIALIZE_METHODS(CAddrInfo, obj) {
-    uint8_t version = 4;
+    uint8_t version = 5;
     READWRITE(version, obj.ip, obj.services, obj.lastTry);
     uint8_t tried = obj.ourLastTry != 0;
     READWRITE(tried);
@@ -163,6 +171,9 @@ public:
         READWRITE(obj.blocks);
       if (version >= 4)
         READWRITE(obj.ourLastSuccess);
+      if (version >= 5) {
+        READWRITE(obj.httpCheckTime, obj.httpExcluded);
+      }
     }
   }
 };
@@ -174,6 +185,8 @@ public:
   int nTracked;
   int nNew;
   int nGood;
+  int nHttpExcluded;
+  int nHttpPending;
   int nAge;
 };
 
@@ -186,6 +199,8 @@ struct CServiceResult {
     int nClientV;
     std::string strClientV;
     int64_t ourLastSuccess;
+    bool httpChecked;
+    bool httpExcluded;
 };
 
 //             seen nodes
@@ -199,20 +214,21 @@ struct CServiceResult {
 class CAddrDb {
 private:
   mutable CCriticalSection cs;
-  int nId; // number of address id's
+  int nId = 0; // number of address id's
   std::map<int, CAddrInfo> idToInfo; // map address id to address info (b,c,d,e)
   std::map<CService, int> ipToId; // map ip to id (b,c,d,e)
   std::deque<int> ourId; // sequence of tried nodes, in order we have tried connecting to them (c,d)
   std::set<int> unkId; // set of nodes not yet tried (b)
   std::set<int> goodId; // set of good nodes  (d, good e)
-  int nDirty;
+  int nDirty = 0;
+  bool filterHttp = false;
   
 protected:
   // internal routines that assume proper locks are acquired
   void Add_(const CAddress &addr, bool force);   // add an address
   bool Get_(CServiceResult &ip, int& wait);      // get an IP to test (must call Good_, Bad_, or Skipped_ on result afterwards)
   bool GetMany_(std::vector<CServiceResult> &ips, int max, int& wait);
-  void Good_(const CService &ip, int clientV, std::string clientSV, int blocks, uint64_t services); // mark an IP as good (must have been returned by Get_)
+  void Good_(const CService &ip, int clientV, std::string clientSV, int blocks, uint64_t services, bool httpChecked, bool httpExcluded); // mark an IP as good (must have been returned by Get_)
   void Bad_(const CService &ip, int ban);  // mark an IP as bad (and optionally ban it) (must have been returned by Get_)
   void Skipped_(const CService &ip);       // mark an IP as skipped (must have been returned by Get_)
   int Lookup_(const CService &ip);         // look up id of an IP
@@ -221,12 +237,26 @@ protected:
 public:
   std::map<CService, int64_t> banned; // nodes that are banned, with their unban time (a)
 
+  void SetFilterHttp(bool enabled) { filterHttp = enabled; } // call before starting threads
+
   void GetStats(CAddrDbStats &stats) {
     SHARED_CRITICAL_BLOCK(cs) {
       stats.nBanned = banned.size();
       stats.nAvail = idToInfo.size();
       stats.nTracked = ourId.size();
       stats.nGood = goodId.size();
+      stats.nHttpExcluded = 0;
+      stats.nHttpPending = 0;
+      if (filterHttp) {
+        const int64_t now = time(NULL);
+        for (std::set<int>::const_iterator it = goodId.begin(); it != goodId.end(); ++it) {
+          const CAddrInfo& info = idToInfo.at(*it);
+          if (!info.HasRecentHttpCheck(now))
+            stats.nHttpPending++;
+          else if (info.httpExcluded)
+            stats.nHttpExcluded++;
+        }
+      }
       stats.nNew = unkId.size();
       stats.nAge = 0;
       if (!ourId.empty()) {
@@ -312,9 +342,9 @@ public:
       for (int i=0; i<vAddr.size(); i++)
         Add_(vAddr[i], fForce);
   }
-  void Good(const CService &addr, int clientVersion, std::string clientSubVersion, int blocks, uint64_t services) {
+  void Good(const CService &addr, int clientVersion, std::string clientSubVersion, int blocks, uint64_t services, bool httpChecked = false, bool httpExcluded = false) {
     CRITICAL_BLOCK(cs)
-      Good_(addr, clientVersion, clientSubVersion, blocks, services);
+      Good_(addr, clientVersion, clientSubVersion, blocks, services, httpChecked, httpExcluded);
   }
   void Skipped(const CService &addr) {
     CRITICAL_BLOCK(cs)
@@ -344,7 +374,7 @@ public:
     CRITICAL_BLOCK(cs) {
       for (int i=0; i<ips.size(); i++) {
         if (ips[i].fGood) {
-          Good_(ips[i].service, ips[i].nClientV, ips[i].strClientV, ips[i].nHeight, ips[i].services);
+          Good_(ips[i].service, ips[i].nClientV, ips[i].strClientV, ips[i].nHeight, ips[i].services, ips[i].httpChecked, ips[i].httpExcluded);
         } else {
           Bad_(ips[i].service, ips[i].nBanTime);
         }

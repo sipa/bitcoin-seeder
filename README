@@ -35,6 +35,20 @@ On the system vps.example.com, you can now run dnsseed:
 
 ./dnsseed -h dnsseed.example.com -n vps.example.com
 
+Consider using `--filter-http` when the seed hostname is under a domain used
+to send email (for example, dnsseed.example.com with mail from example.com).
+This keeps peer IPs that accept TCP connections on port 80 or 443 out of DNS
+answers, limiting a possible source of domain reputation problems. A timeout,
+proxy failure, or other inconclusive port check also excludes the IP. A result
+is used for at most seven days and refreshed after each successful P2P probe.
+The option does not ban peers or change Bitcoin
+reachability scoring.
+
+The probes use the configured IPv4 or IPv6 SOCKS5 proxy when one is set,
+and connect directly otherwise. No HTTP request or TLS handshake is sent.
+The cached result adds a field to `dnsseed.dat`, so back up that file before
+running an older seeder binary again.
+
 If you want the DNS server to report SOA records, please provide an
 e-mail address (with the @ part replaced by .) using -m.
 
