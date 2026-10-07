@@ -1,15 +1,19 @@
 # DNSSEC setup for dnsseed
 
-This guide is for a new installation on Debian GNU/Linux 13 (trixie), tested
-with BIND **9.20.29-1~deb13u1**. BIND serves a signed public DNS zone; an
-unprivileged bitcoin-seeder listens on loopback, and an hourly script copies
-its A and AAAA records into BIND using authenticated dynamic updates.
+The built-in DNS server of bitcoin-seeder does not support DNSSEC. Instead,
+bitcoin-seeder can periodically export a zone file with the good nodes it
+found, which BIND then signs and serves.
+
+This guide is for a new installation on Debian GNU/Linux 13 (trixie), with
+BIND 9.20. bitcoin-seeder runs as an unprivileged user, without its own DNS
+server, and writes the zone file every 2 minutes; BIND signs the zone
+automatically.
 
 - [Requirements](#requirements)
 - [Install software](#install-software)
 - [Configure BIND](#configure-bind)
+- [Configure zone reloads](#configure-zone-reloads)
 - [Build and start bitcoin-seeder](#build-and-start-bitcoin-seeder)
-- [Install the updater](#install-the-updater)
 - [Publish the delegation and DS record](#publish-the-delegation-and-ds-record)
 - [Testing](#testing)
 - [Links](#links)
@@ -25,27 +29,25 @@ Replace these example names consistently throughout the configuration:
 - `dnsseed-host.example.com`: the authoritative nameserver's hostname.
 - `contact-email.example.com`: the SOA contact, representing
   `contact-email@example.com`.
+- `seeder`: the ordinary user that builds and runs bitcoin-seeder.
 
 Create an A record (and an AAAA record if IPv6 is available) for
 `dnsseed-host.example.com` in the **parent** zone, pointing to this machine's
 public address. This hostname is outside `dnsseed.example.com`, so its
-address belongs in the parent zone, not in the seed zone. If you instead use
-an NS hostname inside the seed zone, add its address to the seed zone and
-publish the corresponding glue at the parent.
+address belongs in the parent zone, not in the seed zone.
 
-Run the installation and BIND configuration commands below as root. Build
-and run bitcoin-seeder as an ordinary user. Tor is not needed for this setup.
+Run the installation and BIND configuration commands below as root. Tor is
+not needed for this setup.
 
 ## Install software
 
 ```sh
 apt update
-apt install bind9 bind9-dnsutils bind9-utils
+apt install bind9 bind9-dnsutils bind9-utils sudo
 ```
 
-Allow inbound TCP and UDP port 53 in your firewall. Keep the seeder's UDP
-port 15353 private. If you use UFW, allow your actual SSH port before enabling
-it (the example assumes port 22):
+Allow inbound TCP and UDP port 53 in your firewall. If you use UFW, allow
+your actual SSH port before enabling it (the example assumes port 22):
 
 ```sh
 apt install ufw
@@ -64,6 +66,7 @@ settings:
 
 ```conf
 recursion no;
+minimal-responses yes;
 allow-query { any; };
 allow-transfer { none; };
 querylog no;
@@ -71,19 +74,34 @@ listen-on { any; };
 listen-on-v6 { any; };
 ```
 
-Create a writable directory for the zone, journals and DNSSEC keys:
+`minimal-responses yes` stops BIND from adding the zone's NS records to
+answers for resolvers, which would make answers with the maximum number of
+addresses (see below) too large for resolvers that don't use EDNS.
+
+Keep the `seeder` user out of the `bind` group: members can read
+`/etc/bind/rndc.key` and administer BIND with `rndc`. Instead, give the
+crawler its own export directory and allow only a specific reload command
+through `sudo`. Keep DNSSEC keys in a BIND-owned directory that the crawler
+cannot access.
+
+Create both directories. BIND needs write access to the export directory for
+its signed zone and journals. The setgid bit makes new exports inherit the
+`bind` group without giving `seeder` membership of that group. Debian and
+Ubuntu's AppArmor profiles allow BIND to write under `/var/lib/bind`.
 
 ```sh
+install -d -o seeder -g bind -m 2770 /var/lib/bind/dnsseed.example.com-export
 install -d -o bind -g bind -m 0750 /var/lib/bind/dnsseed.example.com
 ```
 
-Create `/var/lib/bind/dnsseed.example.com/db.dnsseed.example.com`:
+Create an initial `/var/lib/bind/dnsseed.example.com-export/db.dnsseed.example.com`,
+so that BIND can load the zone before the first export:
 
 ```dns
 $ORIGIN dnsseed.example.com.
 $TTL 3600
 @ IN SOA dnsseed-host.example.com. contact-email.example.com. (
-    1       ; initial serial (BIND increments it for dynamic updates)
+    1       ; initial serial (bitcoin-seeder's exports increase it)
     3600    ; refresh
     600     ; retry
     86400   ; expire
@@ -92,12 +110,9 @@ $TTL 3600
 @ IN NS dnsseed-host.example.com.
 ```
 
-No dummy address record is needed. The explicit `$ORIGIN` keeps relative
-names inside the seed zone. Set the file ownership:
-
 ```sh
-chown bind:bind /var/lib/bind/dnsseed.example.com/db.dnsseed.example.com
-chmod 0640 /var/lib/bind/dnsseed.example.com/db.dnsseed.example.com
+chown seeder:bind /var/lib/bind/dnsseed.example.com-export/db.dnsseed.example.com
+chmod 0640 /var/lib/bind/dnsseed.example.com-export/db.dnsseed.example.com
 ```
 
 Add this zone to `/etc/bind/named.conf.local`:
@@ -105,25 +120,23 @@ Add this zone to `/etc/bind/named.conf.local`:
 ```conf
 zone "dnsseed.example.com" {
     type primary;
-    file "/var/lib/bind/dnsseed.example.com/db.dnsseed.example.com";
+    file "/var/lib/bind/dnsseed.example.com-export/db.dnsseed.example.com";
     key-directory "/var/lib/bind/dnsseed.example.com";
-    update-policy local;
     dnssec-policy default;
     inline-signing yes;
+    // Every export replaces most address records. The default journal size
+    // limit is too small for that, and would stop the changes from being
+    // applied.
+    max-journal-size 10m;
 };
 ```
 
-`update-policy local` requires BIND's generated local TSIG session key;
-`nsupdate -l` uses that key. It replaces unauthenticated `allow-update
-{ localhost; };`. Root can read `/run/named/session.key` on Debian; do not
-make this key world-readable.
-
 `dnssec-policy default` generates a combined signing key using
-ECDSAP256SHA256 and maintains the signatures automatically. BIND manages the
-`.signed` file and its format. Do not manually generate keys, include DNSKEY
-files, or run `dnssec-signzone` for this setup. The policy uses NSEC, so no
-NSEC3 salt is needed. The old `dnssec-enable`, `auto-dnssec` and
-`dnssec-keygen -r` commands are obsolete in BIND 9.20.
+ECDSAP256SHA256 and maintains the signatures automatically. With
+`inline-signing`, BIND keeps the signed zone separate from the file that
+bitcoin-seeder writes, and signs the changes after every reload. Do not
+manually generate keys or run `dnssec-signzone` for this setup. Back up the
+keys in `/var/lib/bind/dnsseed.example.com`.
 
 For an existing signed zone, retain its key files and published DS record;
 plan a policy migration using the BIND documentation linked below rather
@@ -133,7 +146,7 @@ Check the configuration before restarting:
 
 ```sh
 named-checkconf
-named-checkzone dnsseed.example.com /var/lib/bind/dnsseed.example.com/db.dnsseed.example.com
+named-checkzone dnsseed.example.com /var/lib/bind/dnsseed.example.com-export/db.dnsseed.example.com
 systemctl restart named
 systemctl --no-pager status named
 journalctl -u named --since '5 minutes ago' --no-pager
@@ -141,7 +154,50 @@ journalctl -u named --since '5 minutes ago' --no-pager
 
 `named-checkconf` should exit successfully without output, and
 `named-checkzone` should report `loaded serial 1` and `OK` for the initial
-file. The Debian service is `named.service`.
+file. BIND's service is `named.service` on Debian and Ubuntu.
+
+## Configure zone reloads
+
+As root, use `visudo` to create `/etc/sudoers.d/dnsseed-zone-reload`, owned by
+root with mode `0440`:
+
+```sh
+visudo -f /etc/sudoers.d/dnsseed-zone-reload
+```
+
+Add this rule, replacing the user and zone name consistently:
+
+```sudoers
+seeder ALL=(root) NOPASSWD: /usr/sbin/rndc -k /etc/bind/rndc.key -s 127.0.0.1 reload dnsseed.example.com
+```
+
+The rule matches the complete command and its arguments, allowing the
+crawler to reload only its own zone without reading BIND's administrative
+key. Do not omit the arguments or use wildcards: that would grant broader
+access. The crawler must not be able to modify this file or the `rndc`
+executable. Check the configuration:
+
+```sh
+visudo -c
+```
+
+The `-k` and `-s` arguments match BIND's default control channel on Debian
+(no `controls` statement in the configuration, and the key in
+`/etc/bind/rndc.key`). If you configured a different one, adjust them in both
+this rule and dnsseed's `--zone-reload` command below.
+
+sudo logs every reload, by default every 2 minutes, along with a PAM session
+for each. To keep these out of the system logs, you can add this line to the
+same file, at the cost of also not logging failed attempts by that user
+(dnsseed still reports failed reloads in its output):
+
+```sudoers
+Defaults:seeder !syslog, !pam_session
+```
+
+This works with the classic sudo, the default on Debian. sudo-rs (the default
+on recent Ubuntu releases) does not support these settings, and `visudo -c`
+rejects them there; leave the line out in that case.
 
 ## Build and start bitcoin-seeder
 
@@ -151,78 +207,78 @@ Install the build dependencies as root:
 apt install build-essential libboost-dev libssl-dev git
 ```
 
-As an ordinary user, clone and build the repository:
+As the `seeder` user, clone and build the repository, and start dnsseed:
 
 ```sh
 git clone https://github.com/sipa/bitcoin-seeder.git
 cd bitcoin-seeder
 make
-./dnsseed -a 127.0.0.1 -p 15353 -h dnsseed.example.com \
-    -n dnsseed-host.example.com -m contact-email.example.com
+umask 0027
+./dnsseed -h dnsseed.example.com -n dnsseed-host.example.com \
+    -m contact-email.example.com --nodns \
+    --zonefile /var/lib/bind/dnsseed.example.com-export/db.dnsseed.example.com \
+    --zone-reload "/usr/bin/sudo -n /usr/sbin/rndc -k /etc/bind/rndc.key -s 127.0.0.1 reload dnsseed.example.com"
 ```
 
-The seeder uses UDP and binds only to loopback. Port 15353 avoids the mDNS
-port 5353. Keep the process running (for example under a service manager).
-Its database needs time to collect reliable peers; a successful DNS response
-can initially have no A or AAAA answers.
+Keep the process running (for example under a service manager), always from
+the same directory: its database (`dnsseed.dat`) is stored there. `--nodns`
+disables the built-in DNS server, so dnsseed needs no open ports and runs as
+an ordinary user; only its fixed reload command runs as root through `sudo`.
 
-```sh
-dig @127.0.0.1 -p 15353 dnsseed.example.com A +norecurse
-dig @127.0.0.1 -p 15353 x49.dnsseed.example.com AAAA +norecurse
+BIND reads the exported files through the inherited `bind` group; the umask
+additionally keeps other users from reading them (BIND does not need it).
+If you run the crawler under systemd, include these settings in its unit so
+BIND starts before the crawler, exported files retain these permissions,
+and `sudo` can acquire the privileges needed for the reload:
+
+```ini
+[Unit]
+Wants=named.service
+After=named.service
+
+[Service]
+UMask=0027
+NoNewPrivileges=false
 ```
 
-## Install the updater
+`NoNewPrivileges=true` prevents `sudo` from gaining root privileges, even
+with a matching sudoers rule. Test the reload from the same service sandbox
+if you add other hardening settings. `sudo -n` fails instead of prompting
+for a password, so authorization and reload errors appear in dnsseed's output.
 
-Use [contrib/dnsupdate](contrib/dnsupdate) from this change. The following
-commands assume your current directory is the repository checkout:
+Every 2 minutes (see `--zone-interval`), dnsseed replaces the zone file and
+runs the reload command. The zone contains the SOA and NS records (from `-h`,
+`-n` and `-m`), and A and AAAA records, randomly selected from the good
+nodes, at the zone apex and at each filter name that the seeder supports
+(such as `x9.dnsseed.example.com`; see its `-w` option).
 
-```sh
-install -m 0755 contrib/dnsupdate /usr/local/sbin/dnsupdate
-/usr/local/sbin/dnsupdate -h dnsseed.example.com -a 127.0.0.1 -p 15353
-```
+The number of A and AAAA records per name is as many as fit in a 512-byte
+answer, with room for an EDNS OPT record and DNS cookie (26 A or 15 AAAA
+records for `dnsseed.example.com`; fewer for longer names). That is the limit
+for clients that don't use EDNS when asking their resolver (such as glibc's
+resolver, unless `options edns0` is set), or use it with a 512-byte buffer.
+Larger answers make those clients retry over TCP, and their lookup fails
+entirely if that doesn't work (glibc doesn't use the truncated answer).
+Between resolvers and BIND, EDNS is used, and signed answers fit in the usual
+1232-byte buffer; clients that request signatures with a smaller buffer still
+need TCP.
 
-The updater copies the apex and the default whitelisted filter names. It
-updates only their A and AAAA records, preserving the SOA, NS and DNSSEC
-records. It fetches all answers before sending one transaction to local BIND.
-A timeout or DNS error aborts the update and preserves the previous records;
-a successful empty answer removes the corresponding stale address records.
+The TTL of the records is the export interval. Unlike with the built-in DNS
+server, which selects addresses for every query, all clients get the same
+addresses until the next export; a short interval makes clients of different
+resolvers get different addresses over time.
 
-For a custom seeder whitelist, pass matching space-separated DNS filter names
-with `-w`, for example `-w 'x1 x9 x49'`. Use `-w ''` for the apex only.
-The defaults include the current P2P v2 filters `x809`, `x849`, `xc08`, and
-`xc48`. The seeder's own `-w` option takes numeric flag combinations instead.
+The database needs time to collect reliable nodes. Nothing is exported until
+there are good nodes; if there are none (for example when starting with an
+empty database), the previous zone file is kept.
 
-Create `/etc/cron.d/dnsseed-update` with this content (and a final newline):
-
-```cron
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-7 * * * * root /usr/local/sbin/dnsupdate -h dnsseed.example.com -a 127.0.0.1 -p 15353
-```
-
-Install and enable cron if it is not already running:
-
-```sh
-apt install cron
-systemctl enable --now cron
-```
-
-The script is silent on success; keep cron error reporting configured.
-For multiple seeds, give each a separate
-BIND zone, seeder process/database directory, private UDP port, and cron line.
-
-For a dedicated non-root updater, configure an explicit TSIG key with an
-`update-policy` granting only A/AAAA updates in its zone, give that user read
-access to the key, and pass `-k /path/to/key`. This mode sends authenticated
-updates to BIND at `127.0.0.1:53`; do not combine an explicit `update-policy`
-with `update-policy local` in the same zone.
-
-Once a zone is dynamic, use `nsupdate` for changes. If you must edit its file,
-use `rndc freeze dnsseed.example.com` first and `rndc thaw dnsseed.example.com`
-afterward. Back up the DNSSEC keys and zone data.
+For multiple seeds, give each a separate BIND zone, crawler user, database
+directory, export directory, and DNSSEC key directory. Add a separate sudoers
+rule for each crawler, restricting its reload command to its own zone.
 
 ## Publish the delegation and DS record
 
-Wait until BIND serves a DNSKEY and its signature:
+After the first export, wait until BIND serves a DNSKEY and its signature:
 
 ```sh
 dig @127.0.0.1 dnsseed.example.com DNSKEY +dnssec +norecurse
@@ -236,31 +292,55 @@ dnssec-dsfromkey -2 -f /tmp/dnsseed-dnskey.txt dnsseed.example.com
 ```
 
 Expect a DS record containing the key tag, algorithm `13`, digest type `2`,
-and a hexadecimal digest. No `dsset-*` file or manual signing step is needed.
+and a hexadecimal digest.
 
 In the parent zone, delegate `dnsseed.example.com` with an NS record pointing
 to `dnsseed-host.example.com`. Once the nameserver is publicly reachable and
 serving signatures, publish the derived DS record in that parent zone (or
-through the registrar if it manages that delegation). A DS record for this
-seed subdomain belongs at its delegation, not automatically at `example.com`'s
-registry delegation.
+through the registrar if it manages that delegation). Then let BIND know that
+the DS record is published:
+
+```sh
+rndc dnssec -checkds published dnsseed.example.com
+```
 
 ## Testing
+
+As root, check that the crawler cannot read BIND's administrative key or
+access the DNSSEC key directory, and reload the zone as the crawler user:
+
+```sh
+runuser -u seeder -- test ! -r /etc/bind/rndc.key
+runuser -u seeder -- test ! -x /var/lib/bind/dnsseed.example.com
+runuser -u seeder -- /usr/bin/sudo -n /usr/sbin/rndc -k /etc/bind/rndc.key -s 127.0.0.1 reload dnsseed.example.com
+```
+
+Both permission checks and the reload command should exit successfully.
+
+Check that address answers fit in 512 bytes without EDNS (`+ignore` stops
+`dig` from silently retrying over TCP):
+
+```sh
+dig @127.0.0.1 dnsseed.example.com A +noedns +norecurse +ignore
+dig @127.0.0.1 dnsseed.example.com AAAA +noedns +norecurse +ignore
+```
+
+Expect the addresses, and no `tc` flag.
 
 Check local authoritative answers over UDP and TCP:
 
 ```sh
 dig @127.0.0.1 dnsseed.example.com SOA +dnssec +norecurse
-dig @127.0.0.1 dnsseed.example.com A +dnssec +norecurse
-dig @127.0.0.1 dnsseed.example.com AAAA +dnssec +norecurse
-dig @127.0.0.1 x49.dnsseed.example.com A +dnssec +norecurse
+dig @127.0.0.1 dnsseed.example.com A +dnssec +norecurse +ignore
+dig @127.0.0.1 dnsseed.example.com AAAA +dnssec +norecurse +ignore
+dig @127.0.0.1 x49.dnsseed.example.com A +dnssec +norecurse +ignore
 dig @127.0.0.1 x49.dnsseed.example.com AAAA +dnssec +norecurse +tcp
 ```
 
-Expect `status: NOERROR` and the `aa` flag. Nonempty address answers should
-include their RRSIG. Empty answers should include signed denial records in
-the authority section. An RRSIG proves that signatures are being served;
-validation also requires the parent DS chain.
+Expect `status: NOERROR` and the `aa` flag, and no `tc` flag. Nonempty
+address answers should include their RRSIG. Empty answers should include
+signed denial records in the authority section. An RRSIG proves that
+signatures are being served; validation also requires the parent DS chain.
 
 After publishing the NS and DS records and allowing caches to expire, test
 with a validating resolver:
@@ -273,16 +353,11 @@ delv dnsseed.example.com A
 
 Expect the `ad` flag from the validating resolver and a successful validation
 from `delv`. Also inspect your domain at [DNSViz](https://dnsviz.net/).
-Use `journalctl -u named` to investigate signing or dynamic-update errors.
-
-The Debian 13 / BIND 9.20.29 test used an isolated loopback instance. It checked
-configuration and zone loading, automatic signing, authenticated A/AAAA
-updates at the apex and filter names, signature validation with a local trust
-anchor, and preserving existing records when the source fails. Public
-NS/DS delegation requires your real domain and is a separate deployment step.
+Use `journalctl -u named` to investigate signing or loading errors, and
+dnsseed's output for export or reload errors.
 
 ## Links
 
 - [BIND 9.20 DNSSEC setup and policy migration](https://bind9.readthedocs.io/en/v9.20.29/chapter5.html)
 - [BIND configuration reference](https://bind9.readthedocs.io/en/v9.20.29/reference.html)
-- [BIND utilities: nsupdate, delv and dnssec-dsfromkey](https://bind9.readthedocs.io/en/v9.20.29/manpages.html)
+- [BIND utilities: rndc, delv and dnssec-dsfromkey](https://bind9.readthedocs.io/en/v9.20.29/manpages.html)
