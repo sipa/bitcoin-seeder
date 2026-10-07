@@ -10,8 +10,10 @@
 #include "protocol.h"
 #include "util.h"
 #include "util/serfloat.h"
+#include "util/time.h"
 
-#define MIN_RETRY 1000
+// Minimum time between attempts to connect to the same node.
+static constexpr std::chrono::seconds MIN_RETRY{1000};
 
 #define REQUIRE_VERSION 70001
 
@@ -49,8 +51,8 @@ private:
 public:
   CAddrStat() : weight(0), count(0), reliability(0) {}
 
-  void Update(bool good, int64_t age, double tau) {
-    double f =  exp(-age/tau);
+  void Update(bool good, std::chrono::seconds age, std::chrono::seconds tau) {
+    double f = exp(-std::chrono::duration<double>(age) / tau);
     reliability = reliability * f + (good ? (1.0-f) : 0);
     count = count * f + 1;
     weight = weight * f + (1.0-f);
@@ -70,7 +72,7 @@ public:
   int blocks;
   double uptime[5];
   std::string clientSubVersion;
-  int64_t lastSuccess;
+  NodeSeconds lastSuccess;
   bool fGood;
   uint64_t services;
 };
@@ -80,10 +82,10 @@ class CAddrInfo {
 private:
   CService ip;
   uint64_t services;
-  int64_t lastTry;
-  int64_t ourLastTry;
-  int64_t ourLastSuccess;
-  int64_t ignoreTill;
+  NodeSeconds lastTry;
+  NodeSeconds ourLastTry;
+  NodeSeconds ourLastSuccess;
+  NodeSeconds ignoreTill;
   CAddrStat stat2H;
   CAddrStat stat8H;
   CAddrStat stat1D;
@@ -95,7 +97,7 @@ private:
   int success;
   std::string clientSubVersion;
 public:
-  CAddrInfo() : services(0), lastTry(0), ourLastTry(0), ourLastSuccess(0), ignoreTill(0), clientVersion(0), blocks(0), total(0), success(0) {}
+  CAddrInfo() : services(0), clientVersion(0), blocks(0), total(0), success(0) {}
   
   CAddrReport GetReport() const {
     CAddrReport ret;
@@ -131,21 +133,21 @@ public:
     
     return false;
   }
-  int GetBanTime() const {
-    if (IsGood()) return 0;
-    if (clientVersion && clientVersion < 31900) { return 604800; }
-    if (stat1M.reliability - stat1M.weight + 1.0 < 0.15 && stat1M.count > 32) { return 30*86400; }
-    if (stat1W.reliability - stat1W.weight + 1.0 < 0.10 && stat1W.count > 16) { return 7*86400; }
-    if (stat1D.reliability - stat1D.weight + 1.0 < 0.05 && stat1D.count > 8) { return 1*86400; }
-    return 0;
+  std::chrono::seconds GetBanTime() const {
+    if (IsGood()) return 0s;
+    if (clientVersion && clientVersion < 31900) { return 7 * 24h; }
+    if (stat1M.reliability - stat1M.weight + 1.0 < 0.15 && stat1M.count > 32) { return 30 * 24h; }
+    if (stat1W.reliability - stat1W.weight + 1.0 < 0.10 && stat1W.count > 16) { return 7 * 24h; }
+    if (stat1D.reliability - stat1D.weight + 1.0 < 0.05 && stat1D.count > 8) { return 24h; }
+    return 0s;
   }
-  int GetIgnoreTime() const {
-    if (IsGood()) return 0;
-    if (stat1M.reliability - stat1M.weight + 1.0 < 0.20 && stat1M.count > 2) { return 10*86400; }
-    if (stat1W.reliability - stat1W.weight + 1.0 < 0.16 && stat1W.count > 2)  { return 3*86400; }
-    if (stat1D.reliability - stat1D.weight + 1.0 < 0.12 && stat1D.count > 2)  { return 8*3600; }
-    if (stat8H.reliability - stat8H.weight + 1.0 < 0.08 && stat8H.count > 2)  { return 2*3600; }
-    return 0;
+  std::chrono::seconds GetIgnoreTime() const {
+    if (IsGood()) return 0s;
+    if (stat1M.reliability - stat1M.weight + 1.0 < 0.20 && stat1M.count > 2) { return 10 * 24h; }
+    if (stat1W.reliability - stat1W.weight + 1.0 < 0.16 && stat1W.count > 2)  { return 3 * 24h; }
+    if (stat1D.reliability - stat1D.weight + 1.0 < 0.12 && stat1D.count > 2)  { return 8h; }
+    if (stat8H.reliability - stat8H.weight + 1.0 < 0.08 && stat8H.count > 2)  { return 2h; }
+    return 0s;
   }
   
   void Update(bool good);
@@ -154,11 +156,12 @@ public:
   
   SERIALIZE_METHODS(CAddrInfo, obj) {
     uint8_t version = 4;
-    READWRITE(version, obj.ip, obj.services, obj.lastTry);
-    uint8_t tried = obj.ourLastTry != 0;
+    // Timestamps are serialized as the number of seconds since the Unix epoch.
+    READWRITE(version, obj.ip, obj.services, Using<ChronoFormatter<int64_t>>(obj.lastTry));
+    uint8_t tried = obj.ourLastTry != NodeSeconds{};
     READWRITE(tried);
     if (tried) {
-      READWRITE(obj.ourLastTry, obj.ignoreTill, obj.stat2H, obj.stat8H, obj.stat1D, obj.stat1W);
+      READWRITE(Using<ChronoFormatter<int64_t>>(obj.ourLastTry), Using<ChronoFormatter<int64_t>>(obj.ignoreTill), obj.stat2H, obj.stat8H, obj.stat1D, obj.stat1W);
       if (version >= 1) {
         READWRITE(obj.stat1M);
       } else {
@@ -170,7 +173,7 @@ public:
       if (version >= 3)
         READWRITE(obj.blocks);
       if (version >= 4)
-        READWRITE(obj.ourLastSuccess);
+        READWRITE(Using<ChronoFormatter<int64_t>>(obj.ourLastSuccess));
     }
   }
 };
@@ -182,18 +185,18 @@ public:
   int nTracked;
   int nNew;
   int nGood;
-  int nAge;
+  std::chrono::seconds nAge;
 };
 
 struct CServiceResult {
     CService service;
     uint64_t services;
     bool fGood;
-    int nBanTime;
+    std::chrono::seconds nBanTime;
     int nHeight;
     int nClientV;
     std::string strClientV;
-    int64_t ourLastSuccess;
+    NodeSeconds ourLastSuccess;
 };
 
 //             seen nodes
@@ -218,16 +221,16 @@ private:
 protected:
   // internal routines that assume proper locks are acquired
   void Add_(const CAddress &addr, bool force);   // add an address
-  bool Get_(CServiceResult &ip, int& wait);      // get an IP to test (must call Good_, Bad_, or Skipped_ on result afterwards)
-  bool GetMany_(std::vector<CServiceResult> &ips, int max, int& wait);
+  bool Get_(CServiceResult &ip, std::chrono::seconds& wait); // get an IP to test (must call Good_, Bad_, or Skipped_ on result afterwards)
+  bool GetMany_(std::vector<CServiceResult> &ips, int max, std::chrono::seconds& wait);
   void Good_(const CService &ip, int clientV, std::string clientSV, int blocks, uint64_t services); // mark an IP as good (must have been returned by Get_)
-  void Bad_(const CService &ip, int ban);  // mark an IP as bad (and optionally ban it) (must have been returned by Get_)
+  void Bad_(const CService &ip, std::chrono::seconds ban); // mark an IP as bad (and optionally ban it) (must have been returned by Get_)
   void Skipped_(const CService &ip);       // mark an IP as skipped (must have been returned by Get_)
   int Lookup_(const CService &ip);         // look up id of an IP
   void GetIPs_(std::set<CNetAddr>& ips, uint64_t requestedFlags, int max, const bool *nets); // get a random set of good IPs (shared lock only)
 
 public:
-  std::map<CService, int64_t> banned; // nodes that are banned, with their unban time (a)
+  std::map<CService, NodeSeconds> banned; // nodes that are banned, with their unban time (a)
 
   void GetStats(CAddrDbStats &stats) {
     SHARED_CRITICAL_BLOCK(cs) {
@@ -236,17 +239,17 @@ public:
       stats.nTracked = ourId.size();
       stats.nGood = goodId.size();
       stats.nNew = unkId.size();
-      stats.nAge = 0;
+      stats.nAge = 0s;
       if (!ourId.empty()) {
         std::map<int, CAddrInfo>::const_iterator it = idToInfo.find(ourId.front());
-        if (it != idToInfo.end()) stats.nAge = time(NULL) - it->second.ourLastTry;
+        if (it != idToInfo.end()) stats.nAge = Now<NodeSeconds>() - it->second.ourLastTry;
       }
     }
   }
 
   void ResetIgnores() {
       for (std::map<int, CAddrInfo>::iterator it = idToInfo.begin(); it != idToInfo.end(); it++) {
-           (*it).second.ignoreTill = 0;
+           (*it).second.ignoreTill = NodeSeconds{};
       }
   }
   
@@ -279,7 +282,9 @@ public:
       s << n;
       for (int id : ourId) s << idToInfo.at(id);
       for (int id : unkId) s << idToInfo.at(id);
-      s << banned;
+      // Serialized like a std::map<CService, int64_t>, with the unban times as Unix timestamps.
+      WriteCompactSize(s, banned.size());
+      for (const auto& [ip, until] : banned) s << ip << Using<ChronoFormatter<int64_t>>(until);
     }
   }
 
@@ -294,11 +299,11 @@ public:
       for (int i=0; i<n; i++) {
         CAddrInfo info;
         s >> info;
-        if (!info.GetBanTime()) {
+        if (info.GetBanTime() == 0s) {
           int id = nId++;
           idToInfo[id] = info;
           ipToId[info.ip] = id;
-          if (info.ourLastTry) {
+          if (info.ourLastTry != NodeSeconds{}) {
             ourId.push_back(id);
             if (info.IsGood()) goodId.insert(id);
           } else {
@@ -307,7 +312,14 @@ public:
         }
       }
       nDirty++;
-      s >> banned;
+      banned.clear();
+      uint64_t nBanned = ReadCompactSize(s);
+      for (uint64_t i = 0; i < nBanned; i++) {
+        CService ip;
+        NodeSeconds until;
+        s >> ip >> Using<ChronoFormatter<int64_t>>(until);
+        banned.emplace(ip, until);
+      }
     }
   }
 
@@ -328,16 +340,16 @@ public:
     CRITICAL_BLOCK(cs)
       Skipped_(addr);
   }
-  void Bad(const CService &addr, int ban = 0) {
+  void Bad(const CService &addr, std::chrono::seconds ban = 0s) {
     CRITICAL_BLOCK(cs)
       Bad_(addr, ban);
   }
-  bool Get(CServiceResult &ip, int& wait) {
+  bool Get(CServiceResult &ip, std::chrono::seconds& wait) {
     CRITICAL_BLOCK(cs)
       return Get_(ip, wait);
     return false;
   }
-  void GetMany(std::vector<CServiceResult> &ips, int max, int& wait) {
+  void GetMany(std::vector<CServiceResult> &ips, int max, std::chrono::seconds& wait) {
     CRITICAL_BLOCK(cs) {
       while (max > 0) {
           CServiceResult ip = {};

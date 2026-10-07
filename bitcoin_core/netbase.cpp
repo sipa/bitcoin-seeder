@@ -10,7 +10,6 @@
 #include <sys/fcntl.h>
 #include <poll.h>
 #include <errno.h>
-#include <time.h>
 #endif
 
 #include <boost/algorithm/string/case_conv.hpp> // for to_lower()
@@ -23,7 +22,7 @@ using namespace std;
 typedef std::pair<CService, int> proxyType;
 static proxyType proxyInfo[NET_MAX];
 static proxyType nameproxyInfo;
-int nConnectTimeout = 5000;
+std::chrono::milliseconds nConnectTimeout{5000};
 bool fNameLookup = false;
 
 static const unsigned char pchIPv4[12] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff };
@@ -164,16 +163,16 @@ bool LookupNumeric(const char *pszName, CService& addr, int portDefault)
     return Lookup(pszName, addr, portDefault, false);
 }
 
-/** Receive exactly len bytes from a (blocking) socket, waiting at most until nDeadline (a time(NULL)
- *  value; 0 means no deadline). Returns whether all bytes were received. */
-bool static RecvExact(SOCKET hSocket, char *data, size_t len, int64_t nDeadline)
+/** Receive exactly len bytes from a (blocking) socket, waiting at most until deadline (if any).
+ *  Returns whether all bytes were received. */
+bool static RecvExact(SOCKET hSocket, char *data, size_t len, std::optional<SteadyClock::time_point> deadline)
 {
     while (len > 0) {
-        if (nDeadline) {
-            int64_t nRemaining = nDeadline - time(NULL);
-            if (nRemaining <= 0) return false;
+        if (deadline) {
+            const auto remaining = std::chrono::ceil<std::chrono::milliseconds>(*deadline - SteadyClock::now());
+            if (remaining <= 0ms) return false;
             struct pollfd pfd = {(int)hSocket, POLLIN, 0};
-            int ret = poll(&pfd, 1, nRemaining * 1000);
+            int ret = poll(&pfd, 1, Ticks<std::chrono::milliseconds>(remaining));
             if (ret < 0 && errno == EINTR) continue;
             if (ret <= 0) return false;
         }
@@ -185,7 +184,7 @@ bool static RecvExact(SOCKET hSocket, char *data, size_t len, int64_t nDeadline)
     return true;
 }
 
-bool static Socks4(const CService &addrDest, SOCKET& hSocket, int64_t nDeadline)
+bool static Socks4(const CService &addrDest, SOCKET& hSocket, std::optional<SteadyClock::time_point> deadline)
 {
     printf("SOCKS4 connecting %s\n", addrDest.ToString().c_str());
     if (!addrDest.IsIPv4())
@@ -213,7 +212,7 @@ bool static Socks4(const CService &addrDest, SOCKET& hSocket, int64_t nDeadline)
         return error("Error sending to proxy");
     }
     char pchRet[8];
-    if (!RecvExact(hSocket, pchRet, 8, nDeadline))
+    if (!RecvExact(hSocket, pchRet, 8, deadline))
     {
         closesocket(hSocket);
         return error("Error reading proxy response");
@@ -229,7 +228,7 @@ bool static Socks4(const CService &addrDest, SOCKET& hSocket, int64_t nDeadline)
     return true;
 }
 
-bool static Socks5(string strDest, int port, SOCKET& hSocket, int64_t nDeadline)
+bool static Socks5(string strDest, int port, SOCKET& hSocket, std::optional<SteadyClock::time_point> deadline)
 {
     printf("SOCKS5 connecting %s\n", strDest.c_str());
     if (strDest.size() > 255)
@@ -248,7 +247,7 @@ bool static Socks5(string strDest, int port, SOCKET& hSocket, int64_t nDeadline)
         return error("Error sending to proxy");
     }
     char pchRet1[2];
-    if (!RecvExact(hSocket, pchRet1, 2, nDeadline))
+    if (!RecvExact(hSocket, pchRet1, 2, deadline))
     {
         closesocket(hSocket);
         return error("Error reading proxy response");
@@ -271,7 +270,7 @@ bool static Socks5(string strDest, int port, SOCKET& hSocket, int64_t nDeadline)
         return error("Error sending to proxy");
     }
     char pchRet2[4];
-    if (!RecvExact(hSocket, pchRet2, 4, nDeadline))
+    if (!RecvExact(hSocket, pchRet2, 4, deadline))
     {
         closesocket(hSocket);
         return error("Error reading proxy response");
@@ -305,15 +304,15 @@ bool static Socks5(string strDest, int port, SOCKET& hSocket, int64_t nDeadline)
     char pchRet3[256];
     switch (pchRet2[3])
     {
-        case 0x01: ret = !RecvExact(hSocket, pchRet3, 4, nDeadline); break;
-        case 0x04: ret = !RecvExact(hSocket, pchRet3, 16, nDeadline); break;
+        case 0x01: ret = !RecvExact(hSocket, pchRet3, 4, deadline); break;
+        case 0x04: ret = !RecvExact(hSocket, pchRet3, 16, deadline); break;
         case 0x03:
         {
-            ret = !RecvExact(hSocket, pchRet3, 1, nDeadline);
+            ret = !RecvExact(hSocket, pchRet3, 1, deadline);
             if (ret)
                 break;
             int nRecv = (unsigned char)pchRet3[0];
-            ret = !RecvExact(hSocket, pchRet3, nRecv, nDeadline);
+            ret = !RecvExact(hSocket, pchRet3, nRecv, deadline);
             break;
         }
         default: closesocket(hSocket); return error("Error: malformed proxy response");
@@ -323,7 +322,7 @@ bool static Socks5(string strDest, int port, SOCKET& hSocket, int64_t nDeadline)
         closesocket(hSocket);
         return error("Error reading from proxy");
     }
-    if (!RecvExact(hSocket, pchRet3, 2, nDeadline))
+    if (!RecvExact(hSocket, pchRet3, 2, deadline))
     {
         closesocket(hSocket);
         return error("Error reading from proxy");
@@ -332,7 +331,7 @@ bool static Socks5(string strDest, int port, SOCKET& hSocket, int64_t nDeadline)
     return true;
 }
 
-bool static ConnectSocketDirectly(const CService &addrConnect, SOCKET& hSocketRet, int nTimeout)
+bool static ConnectSocketDirectly(const CService &addrConnect, SOCKET& hSocketRet, std::chrono::milliseconds timeout)
 {
     hSocketRet = INVALID_SOCKET;
 
@@ -368,14 +367,14 @@ bool static ConnectSocketDirectly(const CService &addrConnect, SOCKET& hSocketRe
         // WSAEINVAL is here because some legacy version of winsock uses it
         if (WSAGetLastError() == WSAEINPROGRESS || WSAGetLastError() == WSAEWOULDBLOCK || WSAGetLastError() == WSAEINVAL)
         {
-            struct timeval timeout;
-            timeout.tv_sec  = nTimeout / 1000;
-            timeout.tv_usec = (nTimeout % 1000) * 1000;
+            struct timeval tv;
+            tv.tv_sec  = Ticks<std::chrono::seconds>(timeout);
+            tv.tv_usec = Ticks<std::chrono::microseconds>(timeout % 1s);
 
             fd_set fdset;
             FD_ZERO(&fdset);
             FD_SET(hSocket, &fdset);
-            int nRet = select(hSocket + 1, NULL, &fdset, NULL, &timeout);
+            int nRet = select(hSocket + 1, NULL, &fdset, NULL, &tv);
             if (nRet == 0)
             {
                 printf("connection timeout\n");
@@ -476,28 +475,28 @@ bool IsProxy(const CNetAddr &addr) {
     return false;
 }
 
-bool ConnectSocket(const CService &addrDest, SOCKET& hSocketRet, int nTimeout, int64_t nDeadline)
+bool ConnectSocket(const CService &addrDest, SOCKET& hSocketRet, std::chrono::milliseconds timeout, std::optional<SteadyClock::time_point> deadline)
 {
     const proxyType &proxy = proxyInfo[addrDest.GetNetwork()];
 
     // no proxy needed
     if (!proxy.second)
-        return ConnectSocketDirectly(addrDest, hSocketRet, nTimeout);
+        return ConnectSocketDirectly(addrDest, hSocketRet, timeout);
 
     SOCKET hSocket = INVALID_SOCKET;
 
     // first connect to proxy server
-    if (!ConnectSocketDirectly(proxy.first, hSocket, nTimeout))
+    if (!ConnectSocketDirectly(proxy.first, hSocket, timeout))
         return false;
 
     // do socks negotiation
     switch (proxy.second) {
     case 4:
-        if (!Socks4(addrDest, hSocket, nDeadline))
+        if (!Socks4(addrDest, hSocket, deadline))
             return false;
         break;
     case 5:
-        if (!Socks5(addrDest.ToStringIP(), addrDest.GetPort(), hSocket, nDeadline))
+        if (!Socks5(addrDest.ToStringIP(), addrDest.GetPort(), hSocket, deadline))
             return false;
         break;
     default:
@@ -508,7 +507,7 @@ bool ConnectSocket(const CService &addrDest, SOCKET& hSocketRet, int nTimeout, i
     return true;
 }
 
-bool ConnectSocketByName(CService &addr, SOCKET& hSocketRet, const char *pszDest, int portDefault, int nTimeout)
+bool ConnectSocketByName(CService &addr, SOCKET& hSocketRet, const char *pszDest, int portDefault, std::chrono::milliseconds timeout)
 {
     string strDest;
     int port = portDefault;
@@ -518,12 +517,12 @@ bool ConnectSocketByName(CService &addr, SOCKET& hSocketRet, const char *pszDest
     CService addrResolved(CNetAddr(strDest, fNameLookup && !nameproxyInfo.second), port);
     if (addrResolved.IsValid()) {
         addr = addrResolved;
-        return ConnectSocket(addr, hSocketRet, nTimeout);
+        return ConnectSocket(addr, hSocketRet, timeout);
     }
     addr = CService("0.0.0.0:0");
     if (!nameproxyInfo.second)
         return false;
-    if (!ConnectSocketDirectly(nameproxyInfo.first, hSocket, nTimeout))
+    if (!ConnectSocketDirectly(nameproxyInfo.first, hSocket, timeout))
         return false;
 
     switch(nameproxyInfo.second)
@@ -531,7 +530,7 @@ bool ConnectSocketByName(CService &addr, SOCKET& hSocketRet, const char *pszDest
         default:
         case 4: return false;
         case 5:
-            if (!Socks5(strDest, port, hSocket, 0))
+            if (!Socks5(strDest, port, hSocket, std::nullopt))
                 return false;
             break;
     }

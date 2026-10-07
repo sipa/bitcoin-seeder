@@ -77,13 +77,6 @@ inline uint256 Hash(std::span<const std::byte> data)
     return hash2;
 }
 
-void static inline Sleep(int nMilliSec) {
-    struct timespec wa;
-    wa.tv_sec = nMilliSec/1000;
-    wa.tv_nsec = (nMilliSec % 1000) * 1000000;
-    nanosleep(&wa, NULL);
-}
-
 
 std::string vstrprintf(const std::string &format, va_list ap);
 

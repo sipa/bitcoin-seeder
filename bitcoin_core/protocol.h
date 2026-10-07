@@ -12,6 +12,7 @@
 
 #include "netbase.h"
 #include "serialize.h"
+#include "util/time.h"
 #include <cassert>
 #include <string>
 
@@ -109,7 +110,7 @@ class CAddress : public CService
         // Serialization as used in addr messages.
         SERIALIZE_METHODS(CAddress, obj)
         {
-            READWRITE(obj.nTime, obj.nServices, AsBase<CService>(obj));
+            READWRITE(Using<LossyChronoFormatter<uint32_t>>(obj.nTime), obj.nServices, AsBase<CService>(obj));
         }
 
         void print() const;
@@ -119,7 +120,7 @@ class CAddress : public CService
         uint64_t nServices;
 
         // disk and network only
-        unsigned int nTime;
+        NodeSeconds nTime;
 };
 
 #endif // __INCLUDED_PROTOCOL_H__

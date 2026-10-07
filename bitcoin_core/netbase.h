@@ -9,8 +9,11 @@
 
 #include "serialize.h"
 #include "compat/compat.h"
+#include "util/time.h"
 
-extern int nConnectTimeout;
+#include <optional>
+
+extern std::chrono::milliseconds nConnectTimeout;
 
 #ifdef WIN32
 // In MSVC, this is defined as a macro, undefine it to prevent a compile and link error
@@ -28,7 +31,7 @@ enum Network
     NET_MAX,
 };
 
-extern int nConnectTimeout;
+extern std::chrono::milliseconds nConnectTimeout;
 extern bool fNameLookup;
 
 /** IP address (IPv6, or IPv4 using mapped IPv6 range (::FFFF:0:0/96)) */
@@ -136,8 +139,8 @@ bool LookupHostNumeric(const char *pszName, std::vector<CNetAddr>& vIP, unsigned
 bool Lookup(const char *pszName, CService& addr, int portDefault = 0, bool fAllowLookup = true);
 bool Lookup(const char *pszName, std::vector<CService>& vAddr, int portDefault = 0, bool fAllowLookup = true, unsigned int nMaxSolutions = 0);
 bool LookupNumeric(const char *pszName, CService& addr, int portDefault = 0);
-// nDeadline (a time(NULL) value, or 0 for none) bounds the negotiation with a proxy, if one is used.
-bool ConnectSocket(const CService &addr, SOCKET& hSocketRet, int nTimeout = nConnectTimeout, int64_t nDeadline = 0);
-bool ConnectSocketByName(CService &addr, SOCKET& hSocketRet, const char *pszDest, int portDefault = 0, int nTimeout = nConnectTimeout);
+// deadline (if any) bounds the negotiation with a proxy, if one is used.
+bool ConnectSocket(const CService &addr, SOCKET& hSocketRet, std::chrono::milliseconds timeout = nConnectTimeout, std::optional<SteadyClock::time_point> deadline = std::nullopt);
+bool ConnectSocketByName(CService &addr, SOCKET& hSocketRet, const char *pszDest, int portDefault = 0, std::chrono::milliseconds timeout = nConnectTimeout);
 
 #endif

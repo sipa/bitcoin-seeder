@@ -18,12 +18,14 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include "bitcoin.h"
 #include "db.h"
 #include "streams.h"
 #include "util/strencodings.h"
+#include "util/time.h"
 
 using namespace std;
 
@@ -329,23 +331,21 @@ extern "C" void* ThreadCrawler(void* data) {
   int *nThreads=(int*)data;
   do {
     std::vector<CServiceResult> ips;
-    int wait = 5;
+    std::chrono::seconds wait = 5s;
     db.GetMany(ips, 16, wait);
-    int64_t now = time(NULL);
+    const NodeSeconds now = Now<NodeSeconds>();
     if (ips.empty()) {
-      wait *= 1000;
-      wait += rand() % (500 * *nThreads);
-      Sleep(wait);
+      std::this_thread::sleep_for(wait + std::chrono::milliseconds{rand() % (500 * *nThreads)});
       continue;
     }
     vector<CAddress> addr;
     for (CServiceResult& res : ips) {
-      res.nBanTime = 0;
+      res.nBanTime = 0s;
       res.nClientV = 0;
       res.nHeight = 0;
       res.strClientV = "";
       res.services = 0;
-      bool getaddr = res.ourLastSuccess + 86400 < now;
+      bool getaddr = res.ourLastSuccess + 24h < now;
       res.fGood = TestNode(res.service,res.nBanTime,res.nClientV,res.strClientV,res.nHeight,getaddr ? &addr : NULL, res.services);
     }
     db.ResultMany(ips);
@@ -361,9 +361,9 @@ public:
   struct FlagSpecificData {
       int nIPv4, nIPv6;
       std::vector<addr_t> cache;
-      time_t cacheTime;
+      SteadyClock::time_point cacheTime;
       unsigned int cacheHits;
-      FlagSpecificData() : nIPv4(0), nIPv6(0), cacheTime(0), cacheHits(0) {}
+      FlagSpecificData() : nIPv4(0), nIPv6(0), cacheHits(0) {}
   };
 
   dns_opt_t dns_opt; // must be first
@@ -378,10 +378,10 @@ public:
         nets[NET_IPV4] = true;
         nets[NET_IPV6] = true;
     }
-    time_t now = time(NULL);
+    const SteadyClock::time_point now = SteadyClock::now();
     FlagSpecificData& thisflag = perflag[requestedFlags];
     thisflag.cacheHits++;
-    if (force || thisflag.cacheHits * 400 > (thisflag.cache.size()*thisflag.cache.size()) || (thisflag.cacheHits*thisflag.cacheHits * 20 > thisflag.cache.size() && (now - thisflag.cacheTime > 5))) {
+    if (force || thisflag.cacheHits * 400 > (thisflag.cache.size()*thisflag.cache.size()) || (thisflag.cacheHits*thisflag.cacheHits * 20 > thisflag.cache.size() && (now - thisflag.cacheTime > 5s))) {
       set<CNetAddr> ips;
       db.GetIPs(ips, requestedFlags, 1000, nets);
       dbQueries++;
@@ -484,7 +484,7 @@ extern "C" void* ThreadDNS(void* arg) {
 extern "C" void* ThreadDumper(void*) {
   int count = 0;
   do {
-    Sleep(100000 << count); // First 100s, than 200s, 400s, 800s, 1600s, and then 3200s forever
+    std::this_thread::sleep_for(100s * (1 << count)); // First 100s, than 200s, 400s, 800s, 1600s, and then 3200s forever
     if (count < 5)
         count++;
     {
@@ -505,13 +505,13 @@ extern "C" void* ThreadDumper(void*) {
       if (d) fprintf(d, "# address                                        good  lastSuccess    %%(2h)   %%(8h)   %%(1d)   %%(7d)  %%(30d)  blocks      svcs  version\n");
       double stat[5]={0,0,0,0,0};
       for (const CAddrReport& rep : v) {
-        if (d) fprintf(d, "%-47s  %4d  %11" PRId64 "  %6.2f%% %6.2f%% %6.2f%% %6.2f%% %6.2f%%  %6i  %08" PRIx64 "  %5i \"%s\"\n", rep.ip.ToString().c_str(), (int)rep.fGood, rep.lastSuccess, 100.0*rep.uptime[0], 100.0*rep.uptime[1], 100.0*rep.uptime[2], 100.0*rep.uptime[3], 100.0*rep.uptime[4], rep.blocks, rep.services, rep.clientVersion, SanitizeString(rep.clientSubVersion).c_str());
+        if (d) fprintf(d, "%-47s  %4d  %11" PRId64 "  %6.2f%% %6.2f%% %6.2f%% %6.2f%% %6.2f%%  %6i  %08" PRIx64 "  %5i \"%s\"\n", rep.ip.ToString().c_str(), (int)rep.fGood, int64_t{TicksSinceEpoch<std::chrono::seconds>(rep.lastSuccess)}, 100.0*rep.uptime[0], 100.0*rep.uptime[1], 100.0*rep.uptime[2], 100.0*rep.uptime[3], 100.0*rep.uptime[4], rep.blocks, rep.services, rep.clientVersion, SanitizeString(rep.clientSubVersion).c_str());
         for (int i = 0; i < 5; i++) stat[i] += rep.uptime[i];
       }
       if (d) fclose(d);
       FILE *ff = fopen("dnsstats.log", "a");
       if (ff) {
-        fprintf(ff, "%llu %g %g %g %g %g\n", (unsigned long long)(time(NULL)), stat[0], stat[1], stat[2], stat[3], stat[4]);
+        fprintf(ff, "%llu %g %g %g %g %g\n", (unsigned long long)TicksSinceEpoch<std::chrono::seconds>(NodeClock::now()), stat[0], stat[1], stat[2], stat[3], stat[4]);
         fclose(ff);
       }
     }
@@ -523,7 +523,7 @@ extern "C" void* ThreadStats(void*) {
   bool first = true;
   do {
     char c[256];
-    time_t tim = time(NULL);
+    time_t tim = NodeClock::to_time_t(NodeClock::now());
     struct tm *tmp = localtime(&tim);
     strftime(c, 256, "[%y-%m-%d %H:%M:%S]", tmp);
     CAddrDbStats stats;
@@ -542,8 +542,8 @@ extern "C" void* ThreadStats(void*) {
       requests += thread->dns_opt.nRequests;
       queries += thread->dbQueries;
     }
-    printf("%s %i/%i available (%i tried in %is, %i new, %i active), %i banned; %llu DNS requests, %llu db queries", c, stats.nGood, stats.nAvail, stats.nTracked, stats.nAge, stats.nNew, stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned, (unsigned long long)requests, (unsigned long long)queries);
-    Sleep(1000);
+    printf("%s %i/%i available (%i tried in %is, %i new, %i active), %i banned; %llu DNS requests, %llu db queries", c, stats.nGood, stats.nAvail, stats.nTracked, (int)Ticks<std::chrono::seconds>(stats.nAge), stats.nNew, stats.nAvail - stats.nTracked - stats.nNew, stats.nBanned, (unsigned long long)requests, (unsigned long long)queries);
+    std::this_thread::sleep_for(1s);
   } while(1);
   return nullptr;
 }
@@ -579,14 +579,14 @@ struct ZoneExportConfig {
   std::string host;
   std::string ns;
   std::string mbox;
-  int interval;
+  std::chrono::seconds interval;
   std::set<uint64_t> filters;
 };
 
 static ZoneExportConfig zoneExport;
 
-/** Maximum time (in seconds) the reload command may run (if the export interval isn't shorter). */
-static const int ZONE_RELOAD_TIMEOUT = 60;
+/** Maximum time the reload command may run (if the export interval isn't shorter). */
+static constexpr std::chrono::seconds ZONE_RELOAD_TIMEOUT{60};
 
 /** Maximum size of answers from the exported zone. Answers to clients that don't use EDNS (such as
  *  glibc by default) are limited to 512 bytes; larger answers make those clients retry over TCP,
@@ -616,7 +616,7 @@ static std::string AbsoluteName(const std::string& name) {
  *  kept). */
 static std::string BuildZone(const ZoneExportConfig& cfg, uint32_t serial) {
   const std::string apex = AbsoluteName(cfg.host);
-  std::string zone = strprintf("; Generated by dnsseed\n$TTL %i\n", cfg.interval);
+  std::string zone = strprintf("; Generated by dnsseed\n$TTL %i\n", (int)Ticks<std::chrono::seconds>(cfg.interval));
   // Refresh, retry, and expire only matter for secondary servers. Negative answers may be cached
   // for 60 seconds.
   zone += strprintf("%s IN SOA %s %s %u 3600 600 86400 60\n", apex.c_str(), AbsoluteName(cfg.ns).c_str(), AbsoluteName(cfg.mbox).c_str(), serial);
@@ -696,15 +696,15 @@ static std::optional<uint32_t> ReadZoneSerial(const std::string& path) {
 /** Determine the serial for the next zone export: the current time, unless that is not greater
  *  than the previous serial (using DNS serial number arithmetic, RFC 1982), for example after the
  *  clock was set back, in which case the previous serial plus one. */
-static uint32_t NextZoneSerial(std::optional<uint32_t> prev, int64_t now) {
-  uint32_t serial = uint32_t(now);
+static uint32_t NextZoneSerial(std::optional<uint32_t> prev, NodeSeconds now) {
+  uint32_t serial = uint32_t(TicksSinceEpoch<std::chrono::seconds>(now));
   if (prev && int32_t(serial - *prev) <= 0) serial = *prev + 1;
   return serial;
 }
 
-/** Run a command using the shell. If it takes longer than timeout seconds, it is killed (along
- *  with any processes it started). Returns whether it ran successfully; otherwise error is set. */
-static bool RunCommand(const std::string& command, int timeout, std::string& error) {
+/** Run a command using the shell. If it takes longer than timeout, it is killed (along with any
+ *  processes it started). Returns whether it ran successfully; otherwise error is set. */
+static bool RunCommand(const std::string& command, std::chrono::seconds timeout, std::string& error) {
   const char *cmd = command.c_str();
   pid_t pid = fork();
   if (pid < 0) {
@@ -718,7 +718,7 @@ static bool RunCommand(const std::string& command, int timeout, std::string& err
     _exit(127);
   }
   setpgid(pid, pid);
-  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout);
+  const SteadyClock::time_point deadline = SteadyClock::now() + timeout;
   int status;
   while (true) {
     pid_t ret = waitpid(pid, &status, WNOHANG);
@@ -727,13 +727,13 @@ static bool RunCommand(const std::string& command, int timeout, std::string& err
       error = strprintf("waiting for it failed (%s)", strerror(errno));
       return false;
     }
-    if (std::chrono::steady_clock::now() >= deadline) {
+    if (SteadyClock::now() >= deadline) {
       kill(-pid, SIGKILL);
       waitpid(pid, &status, 0);
-      error = strprintf("killed after %i seconds", timeout);
+      error = strprintf("killed after %i seconds", (int)Ticks<std::chrono::seconds>(timeout));
       return false;
     }
-    Sleep(100);
+    std::this_thread::sleep_for(100ms);
   }
   if (WIFEXITED(status) && WEXITSTATUS(status) == 0) return true;
   error = WIFEXITED(status) ? strprintf("exit status %i", WEXITSTATUS(status)) : strprintf("terminated by signal %i", WTERMSIG(status));
@@ -751,7 +751,7 @@ extern "C" void* ThreadZoneExport(void*) {
   }
   do {
     // The serial must increase with every export (or DNS servers will refuse to reload the zone).
-    uint32_t next = NextZoneSerial(serial, time(NULL));
+    uint32_t next = NextZoneSerial(serial, Now<NodeSeconds>());
     std::string zone = BuildZone(cfg, next);
     if (!zone.empty()) {
       // Write to a temporary file first, and then atomically replace the zone file.
@@ -771,7 +771,7 @@ extern "C" void* ThreadZoneExport(void*) {
     }
     // If there was nothing to export yet (e.g. shortly after starting without dnsseed.dat), try
     // again sooner.
-    Sleep((zone.empty() ? std::min(cfg.interval, 60) : cfg.interval) * 1000);
+    std::this_thread::sleep_for(zone.empty() ? std::min<std::chrono::seconds>(cfg.interval, 60s) : cfg.interval);
   } while(1);
   return nullptr;
 }
@@ -793,7 +793,7 @@ extern "C" void* ThreadSeeder(void*) {
         db.Add(CService(ip, GetDefaultPort()), true);
       }
     }
-    Sleep(1800000);
+    std::this_thread::sleep_for(30min);
   } while(1);
   return nullptr;
 }
@@ -940,12 +940,12 @@ int main(int argc, char **argv) {
       dnsThread.push_back(new CDnsThread(&opts, i));
       pthread_create(&threadDns, NULL, ThreadDNS, dnsThread[i]);
       printf(".");
-      Sleep(20);
+      std::this_thread::sleep_for(20ms);
     }
     printf("done\n");
   }
   if (!opts.zonefile.empty()) {
-    zoneExport = {opts.zonefile, opts.zoneReload, opts.host, opts.ns, opts.mbox, opts.nZoneInterval, opts.filter_whitelist};
+    zoneExport = {opts.zonefile, opts.zoneReload, opts.host, opts.ns, opts.mbox, std::chrono::seconds{opts.nZoneInterval}, opts.filter_whitelist};
     printf("Exporting zone file %s every %i seconds\n", opts.zonefile.c_str(), opts.nZoneInterval);
     pthread_create(&threadZone, NULL, ThreadZoneExport, NULL);
   }
