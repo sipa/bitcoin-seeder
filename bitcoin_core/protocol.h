@@ -12,6 +12,7 @@
 
 #include "netbase.h"
 #include "serialize.h"
+#include "util/time.h"
 #include <cassert>
 #include <string>
 
@@ -20,11 +21,27 @@ static const int PROTOCOL_VERSION = 60000;
 //! disconnect from peers older than this proto version
 static const int MIN_PEER_PROTO_VERSION = 31800;
 
-extern bool fTestNet;
-extern unsigned short nDefaultP2Port;
-static inline unsigned short GetDefaultPort(const bool testnet = fTestNet)
+enum class ChainType
 {
-    return nDefaultP2Port ? nDefaultP2Port : (testnet ? 18333 : 8333);
+    MAIN,
+    TESTNET3,
+    TESTNET4,
+    SIGNET,
+};
+
+extern ChainType chainType;
+extern unsigned short nDefaultP2Port;
+static inline unsigned short GetDefaultPort()
+{
+    if (nDefaultP2Port) return nDefaultP2Port;
+    switch (chainType) {
+        case ChainType::MAIN: return 8333;
+        case ChainType::TESTNET3: return 18333;
+        case ChainType::TESTNET4: return 48333;
+        case ChainType::SIGNET: return 38333;
+    }
+    assert(false);
+    return 0;
 }
 
 //
@@ -93,7 +110,7 @@ class CAddress : public CService
         // Serialization as used in addr messages.
         SERIALIZE_METHODS(CAddress, obj)
         {
-            READWRITE(obj.nTime, obj.nServices, AsBase<CService>(obj));
+            READWRITE(Using<LossyChronoFormatter<uint32_t>>(obj.nTime), obj.nServices, AsBase<CService>(obj));
         }
 
         void print() const;
@@ -103,7 +120,7 @@ class CAddress : public CService
         uint64_t nServices;
 
         // disk and network only
-        unsigned int nTime;
+        NodeSeconds nTime;
 };
 
 #endif // __INCLUDED_PROTOCOL_H__

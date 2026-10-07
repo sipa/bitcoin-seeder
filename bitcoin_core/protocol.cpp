@@ -92,7 +92,7 @@ CAddress::CAddress(CService ipIn, uint64_t nServicesIn) : CService(ipIn)
 void CAddress::Init()
 {
     nServices = NODE_NETWORK;
-    nTime = 100000000;
+    nTime = NodeSeconds{100000000s};
 }
 
 void CAddress::print() const

@@ -8,13 +8,18 @@
 #include <stdint.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
-#include <time.h>
 #include <ctype.h>
 #include <unistd.h>
 
 #include "dns.h"
+#include "util/time.h"
 
 #define BUFLEN 512
+
+// The serial number of our SOA records: the current time (in seconds since the Unix epoch).
+static uint32_t soa_serial() {
+  return TicksSinceEpoch<std::chrono::seconds>(NodeClock::now());
+}
 
 #if defined(IP_RECVDSTADDR)
 # define DSTADDR_SOCKOPT IP_RECVDSTADDR
@@ -328,7 +333,7 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
     max_auth_size = newpos - outpos;
 
     newpos = outpos;
-    write_record_soa(&newpos, outend, "", offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), 604800, 86400, 2592000, 604800);
+    write_record_soa(&newpos, outend, "", offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, soa_serial(), 604800, 86400, 2592000, 604800);
     if (max_auth_size < newpos - outpos)
         max_auth_size = newpos - outpos;
   }
@@ -345,7 +350,7 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
 
   // SOA records
   if ((typ == TYPE_SOA || typ == QTYPE_ANY) && (cls == CLASS_IN || cls == QCLASS_ANY) && opt->mbox) {
-    int ret2 = write_record_soa(&outpos, outend - max_auth_size, "", offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), 604800, 86400, 2592000, 604800);
+    int ret2 = write_record_soa(&outpos, outend - max_auth_size, "", offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, soa_serial(), 604800, 86400, 2592000, 604800);
     if (!ret2) { outbuf[7]++; }
   }
   
@@ -380,7 +385,7 @@ ssize_t static dnshandle(dns_opt_t *opt, const unsigned char *inbuf, size_t insi
     // response. If we replied with NS above we'd create a bad horizontal
     // referral loop, as the NS response indicates where the resolver should
     // try next.
-    int ret2 = write_record_soa(&outpos, outend, "", offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, time(NULL), 604800, 86400, 2592000, 604800);
+    int ret2 = write_record_soa(&outpos, outend, "", offset, CLASS_IN, opt->nsttl, opt->ns, opt->mbox, soa_serial(), 604800, 86400, 2592000, 604800);
     if (!ret2) { outbuf[9]++; }
   }
   

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstring>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -12,15 +13,16 @@
 #include "uint256.h"
 #include "util.h"
 #include "util/strencodings.h"
+#include "util/time.h"
 
 #define BITCOIN_SEED_NONCE  0x0539a019ca550825ULL
 
-// Maximum time (in seconds) from initiating a connection until the version handshake completes
-// (that is, until verack is received).
-static const int HANDSHAKE_TIMEOUT = 30;
+// Maximum time from initiating a connection until the version handshake completes (that is, until
+// verack is received).
+static constexpr std::chrono::seconds HANDSHAKE_TIMEOUT{30};
 
-// Maximum time (in seconds) from initiating a connection until it is closed, no matter what.
-static const int CONNECTION_TIMEOUT = 60;
+// Maximum time from initiating a connection until it is closed, no matter what.
+static constexpr std::chrono::seconds CONNECTION_TIMEOUT{60};
 
 // Size of a serialized block header.
 static const size_t BLOCK_HEADER_SIZE = 80;
@@ -48,8 +50,9 @@ class CNode {
   string strSubVer;
   int nStartingHeight;
   vector<CAddress> *vAddr;
-  int ban;
-  int64_t doneAfter;
+  std::chrono::seconds ban;
+  // When to finish (if set): after the responses to our requests were received, or timed out.
+  std::optional<SteadyClock::time_point> doneAfter;
   CAddress you;
   bool fGotVersion;
   bool fGotVerAck;
@@ -57,11 +60,11 @@ class CNode {
   // Whether we're still waiting for the response to our request for the known block's header.
   bool fWaitKnownBlock;
 
-  int GetTimeout() {
+  std::chrono::seconds GetTimeout() {
       if (you.IsTor())
-          return 120;
+          return 120s;
       else
-          return 30;
+          return 30s;
   }
 
   template<typename... Args>
@@ -90,7 +93,7 @@ class CNode {
   }
   
   void PushVersion() {
-    int64_t nTime = time(NULL);
+    int64_t nTime = TicksSinceEpoch<std::chrono::seconds>(NodeClock::now());
     uint64_t nLocalNonce = BITCOIN_SEED_NONCE;
     uint64_t nLocalServices = 0;
     int nBestHeight = GetRequireHeight();
@@ -111,13 +114,14 @@ class CNode {
     if (vAddr) {
       PushMessage("getaddr");
     }
-    doneAfter = time(NULL) + (vAddr || fWaitKnownBlock ? GetTimeout() : 1);
+    doneAfter = SteadyClock::now() + (vAddr || fWaitKnownBlock ? GetTimeout() : 1s);
   }
 
   // Called when the response to an outstanding request was received, to finish soon if nothing else is outstanding.
-  void MaybeDone(int64_t now) {
+  void MaybeDone() {
     if ((!vAddr || fGotAddr) && !fWaitKnownBlock) {
-      if (doneAfter == 0 || doneAfter > now + 1) doneAfter = now + 1;
+      const SteadyClock::time_point finish = SteadyClock::now() + 1s;
+      if (!doneAfter || *doneAfter > finish) doneAfter = finish;
     }
   }
 
@@ -181,20 +185,20 @@ class CNode {
         vAddrNew.push_back(addr);
       }
       if (!vAddr) return true;
-      int64_t now = time(NULL);
+      const NodeSeconds now = Now<NodeSeconds>();
       vector<CAddress>::iterator it = vAddrNew.begin();
       if (vAddrNew.size() > 1) {
         fGotAddr = true;
-        MaybeDone(now);
+        MaybeDone();
       }
       while (it != vAddrNew.end()) {
         CAddress &addr = *it;
         it++;
-        if (addr.nTime <= 100000000 || addr.nTime > now + 600)
-          addr.nTime = now - 5 * 86400;
-        if (addr.nTime > now - 604800)
+        if (addr.nTime <= NodeSeconds{100000000s} || addr.nTime > now + 10min)
+          addr.nTime = now - 5 * 24h;
+        if (addr.nTime > now - 7 * 24h)
           vAddr->push_back(addr);
-        if (vAddr->size() > 1000) {doneAfter = 1; return true; }
+        if (vAddr->size() > 1000) {doneAfter = SteadyClock::now(); return true; }
       }
       return true;
     }
@@ -229,7 +233,7 @@ class CNode {
         fMatch = Hash(header) == hashKnownBlock;
       }
       if (!fMatch) return false;
-      MaybeDone(time(NULL));
+      MaybeDone();
       return true;
     }
 
@@ -252,12 +256,12 @@ class CNode {
       CMessageHeader hdr;
       DataStream{std::span<const std::byte>{vRecv}.first(nHeaderSize)} >> hdr;
       if (!hdr.IsValid()) { 
-        ban = 100000; return true;
+        ban = 100000s; return true;
       }
       string strCommand = hdr.GetCommand();
       unsigned int nMessageSize = hdr.nMessageSize;
       if (nMessageSize > MAX_SIZE) { 
-        ban = 100000;
+        ban = 100000s;
         return true; 
       }
       if (nMessageSize > MAX_RECEIVED_MESSAGE_SIZE) {
@@ -290,8 +294,8 @@ class CNode {
         sock = INVALID_SOCKET;
         return true;
       }
-      if (doneAfter == 1) {
-        // Enough addresses were received; ignore any further messages.
+      if (doneAfter && *doneAfter <= SteadyClock::now()) {
+        // We're done (e.g. because enough addresses were received); ignore any further messages.
         return true;
       }
     } while(1);
@@ -299,7 +303,7 @@ class CNode {
   }
   
 public:
-  CNode(const CService& ip, vector<CAddress>* vAddrIn) : sock(INVALID_SOCKET), you(ip), vAddr(vAddrIn), ban(0), doneAfter(0), nVersion(0), nStartingHeight(0) {
+  CNode(const CService& ip, vector<CAddress>* vAddrIn) : sock(INVALID_SOCKET), you(ip), vAddr(vAddrIn), ban(0s), nVersion(0), nStartingHeight(0) {
     fGotVersion = false;
     fGotVerAck = false;
     fGotAddr = false;
@@ -315,16 +319,16 @@ public:
 
   bool Run() {
     bool res = true;
-    const int64_t start = time(NULL);
-    const int64_t handshakeDeadline = start + HANDSHAKE_TIMEOUT;
-    const int64_t connectionDeadline = start + CONNECTION_TIMEOUT;
+    const SteadyClock::time_point start = SteadyClock::now();
+    const SteadyClock::time_point handshakeDeadline = start + HANDSHAKE_TIMEOUT;
+    const SteadyClock::time_point connectionDeadline = start + CONNECTION_TIMEOUT;
     // The negotiation with a proxy (if any) is part of the handshake, so it must finish before the
     // handshake deadline (which is before the connection deadline).
     if (!ConnectSocket(you, sock, nConnectTimeout, handshakeDeadline)) return false;
     PushVersion();
     Send();
-    int64_t now;
-    while (now = time(NULL), ban == 0 && (doneAfter == 0 || doneAfter > now) && sock != INVALID_SOCKET) {
+    SteadyClock::time_point now;
+    while (now = SteadyClock::now(), ban == 0s && (!doneAfter || *doneAfter > now) && sock != INVALID_SOCKET) {
       if (now >= connectionDeadline) {
         // Just drop the connection.
         if (!doneAfter) res = false;
@@ -340,9 +344,10 @@ public:
       FD_ZERO(&except_set);
       FD_SET(sock,&read_set);
       FD_SET(sock,&except_set);
+      const auto wait = std::chrono::ceil<std::chrono::microseconds>(min(doneAfter.value_or(handshakeDeadline), connectionDeadline) - now);
       struct timeval wa;
-      wa.tv_sec = min<int64_t>(doneAfter ? doneAfter : handshakeDeadline, connectionDeadline) - now;
-      wa.tv_usec = 0;
+      wa.tv_sec = Ticks<std::chrono::seconds>(wait);
+      wa.tv_usec = Ticks<std::chrono::microseconds>(wait % 1s);
       int ret = select(sock+1, &read_set, NULL, &except_set, &wa);
       if (ret != 1) {
         if (!doneAfter) res = false;
@@ -367,10 +372,10 @@ public:
     if (fWaitKnownBlock) res = false;
     close(sock);
     sock = INVALID_SOCKET;
-    return (ban == 0) && res;
+    return (ban == 0s) && res;
   }
   
-  int GetBan() {
+  std::chrono::seconds GetBan() {
     return ban;
   }
   
@@ -391,14 +396,14 @@ public:
   }
 };
 
-bool TestNode(const CService &cip, int &ban, int &clientV, std::string &clientSV, int &blocks, vector<CAddress>* vAddr, uint64_t& services) {
+bool TestNode(const CService &cip, std::chrono::seconds &ban, int &clientV, std::string &clientSV, int &blocks, vector<CAddress>* vAddr, uint64_t& services) {
   try {
     CNode node(cip, vAddr);
     bool ret = node.Run();
     if (!ret) {
       ban = node.GetBan();
     } else {
-      ban = 0;
+      ban = 0s;
     }
     clientV = node.GetClientVersion();
     clientSV = node.GetClientSubVersion();
@@ -406,7 +411,7 @@ bool TestNode(const CService &cip, int &ban, int &clientV, std::string &clientSV
     services = node.GetServices();
     return ret;
   } catch(std::ios_base::failure& e) {
-    ban = 0;
+    ban = 0s;
     return false;
   }
 }
